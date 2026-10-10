@@ -212,3 +212,52 @@ Recharts first renders at 320px before measuring its container. On a 360px phone
 ### D-032: End-to-end tests in CI
 
 The pipeline gains an `e2e` job: Node 24, Chromium installed with `--with-deps`, and the browser cached by Playwright version. Next's standalone server binds to `$HOSTNAME`, which Docker sets to the container id, so the test server sets `HOSTNAME=0.0.0.0`. The production image in Milestone 13 needs the same.
+
+## Milestone 3: database schema, migrations and seed
+
+### D-033: Text primary keys, readable in seed data
+
+Every table uses a text primary key. New rows get `crypto.randomUUID()`, and seed rows keep the fixture ids (`pat_01`, `apt_20260822_09_delarosa`), so tests, URLs and the Milestone 2 screens line up. Better Auth also uses text ids. The audit log uses a bigint identity, because it only ever grows and is ordered.
+
+### D-034: Better Auth tables now, configured in Milestone 4
+
+`users`, `sessions`, `accounts`, `verifications` and `rate_limits` use the field names Better Auth expects, so one migration history covers everything. `users` adds our `role`, `active`, `failed_login_count` and `locked_until`. Branch membership is the `user_branches` join table.
+
+### D-035: Hours, not times, for opening hours and series
+
+Sessions are one hour and start on the hour, so `branches.opens_at_hour`, `closes_at_hour` and `appointment_series.start_hour` are small integers, and `open_days` is a `smallint[]` (0 = Sunday). A check constraint keeps appointments on the hour. Asia/Manila has a whole-hour offset, so checking minute 0 in UTC is enough.
+
+### D-036: Rules Postgres enforces
+
+These are written in a hand-maintained migration (`drizzle/0001_integrity.sql`), next to the generated one:
+
+- `btree_gist` exclusion constraints stop overlapping appointments per staff member and per patient, ignoring cancelled and rescheduled ones.
+- A trigger function refuses `UPDATE` and `DELETE` on `session_notes`, `payments`, `credit_ledger` and `audit_log`. Corrections are new rows: a superseding note (`supersedes_id`, `version`) or an `adjustment` ledger entry. `TRUNCATE` is still allowed, so seeding and tests can reset.
+
+### D-037: Payroll snapshot columns on appointments
+
+`appointments.fee_centavos` is the session type rate at booking. `payroll_rate_centavos` and `payroll_share_pct` are the rate class's rate and share when the session is marked attended; a check constraint requires them on every attended appointment. Payroll for past periods therefore never changes when settings do (brief and Milestone 6).
+
+### D-038: Gapless receipts with a locked counter row
+
+`receipt_counters` holds one row per branch. `takeReceiptNumber()` increments it inside the payment's transaction. The row lock serializes concurrent payments, and a rollback returns the number, so there are no gaps. Prefixes are per branch: `CRB-1100` for Bangkal, `CRBP-1` for Panabo.
+
+### D-039: Staff belong to one home branch
+
+The brief gives staff no branch. The schedule is per branch, so `staff.branch_id` is the staff member's home branch. If therapists start splitting weeks across branches, it becomes a join table.
+
+### D-040: Seeds come from the fixtures
+
+`pnpm db:seed` builds its rows from the Milestone 2 fixtures (`src/server/db/seed/seed-data.ts`), so the seeded app shows the same data the static one did. It migrates first, truncates every table, inserts everything in one transaction, and refuses to run with `NODE_ENV=production` unless `--force` is passed.
+
+Fixture series are now one weekday at one time, as the brief defines a series. Staff and rate classes get a `sort_order`, so the schedule keeps the mockup's column order.
+
+### D-041: Database tests against a real Postgres
+
+The brief asks for real Postgres, not mocks. Vitest has two projects: `unit` and `db`. The `db` project's global setup drops and recreates `crb_test` on the dev server (or `TEST_DATABASE_URL`), migrates and seeds it once. Tests that write data run inside a transaction that is always rolled back, and constraint tests use savepoints to check the Postgres error code (`23P01` for an exclusion violation, for example).
+
+We chose this over Testcontainers to avoid a dependency and to reuse the dev server. CI runs a `postgres:16-alpine` service.
+
+### D-042: Scripts run Node with the react-server condition
+
+Server modules start with `import "server-only"`, which throws outside React Server Components. The `db:*` scripts run `node --conditions=react-server --import tsx`, which turns that import into a no-op, and Vitest aliases it to an empty module.

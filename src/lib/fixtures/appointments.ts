@@ -128,7 +128,8 @@ function buildAppointments(): AppointmentFixture[] {
           patientId,
           staffId: slot.staff,
           sessionTypeId: slot.type,
-          seriesId: `ser_${patientId}_${slot.staff}`,
+          // A series is one weekday at one time ("every Saturday at 9:00").
+          seriesId: `ser_${patientId}_${slot.staff.replace("stf_", "")}_${(dayIndex + 1) % 7}_${hh}`,
           startsAt: startsAt.toISOString(),
           endsAt: new Date(startsAt.getTime() + 60 * 60 * 1000).toISOString(),
           status: statusFor(date, slot, startsAt),

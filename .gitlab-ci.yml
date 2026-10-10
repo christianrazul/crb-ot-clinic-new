@@ -46,6 +46,15 @@ typecheck:
 
 unit-tests:
   stage: check
+  # Database tests run against a real Postgres, as in production.
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: crb
+    POSTGRES_PASSWORD: crb
+    POSTGRES_DB: crb
+    TEST_DATABASE_URL: postgres://crb:crb@postgres:5432/crb_test
   script:
     - pnpm test
 

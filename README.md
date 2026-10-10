@@ -18,6 +18,7 @@ corepack enable
 pnpm install
 cp .env.example .env
 pnpm db:up
+pnpm db:seed
 pnpm dev
 ```
 
@@ -86,7 +87,19 @@ Rules that keep this layout safe:
 - Money is always integer centavos. Use `formatPeso()` from `lib/money` to display it.
 - Timestamps are stored in UTC. Display them with the helpers in `lib/dates`, which use `Asia/Manila`.
 
-## Demo data (until Milestone 3)
+## Database
+
+Postgres 16 with Drizzle ORM. The schema lives in `src/server/db/schema/`, migrations in `drizzle/`, and read queries in `src/server/db/queries/`. Some rules are enforced by Postgres itself (`drizzle/0001_integrity.sql`):
+
+- No double booking: exclusion constraints on staff and on patients over `tstzrange(starts_at, ends_at)`. Cancelled and rescheduled appointments free their slot.
+- Session notes, payments, the credit ledger and the audit log are append-only. Triggers refuse updates and deletes.
+- Check constraints for on-the-hour sessions, payroll snapshots on attended sessions, cash covering the amount due, references on non-cash payments, and ledger signs.
+
+`pnpm test` also runs the database tests (`tests/db/`). They create a throwaway `crb_test` database next to the dev one, so Postgres must be running (`pnpm db:up`). Set `TEST_DATABASE_URL` to point somewhere else.
+
+To change the schema, edit `src/server/db/schema/`, run `pnpm db:generate`, review the SQL in `drizzle/`, then `pnpm db:migrate`.
+
+## Demo data
 
 The app runs on typed fixtures in `src/lib/fixtures/`, frozen at Saturday, August 22, 2026, 10:20 AM Manila time: two branches, five staff, sixteen patients, five weeks of sessions, three credit ledgers and this morning's payments. All the data is at CRB Bangkal; switch to Panabo to see the empty states.
 
