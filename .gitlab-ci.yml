@@ -1,0 +1,67 @@
+default:
+  image: node:24-bookworm-slim
+  interruptible: true
+  before_script:
+    - corepack enable
+    - corepack install
+    - pnpm config set store-dir .pnpm-store
+    - pnpm install --frozen-lockfile
+
+variables:
+  # Non-secret placeholders so env validation passes. No job here talks to a database.
+  DATABASE_URL: postgres://crb:crb@localhost:5432/crb
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  NEXT_TELEMETRY_DISABLED: "1"
+  HUSKY: "0"
+
+cache:
+  key:
+    files:
+      - pnpm-lock.yaml
+  paths:
+    - .pnpm-store/
+
+stages:
+  - check
+  - build
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+lint:
+  stage: check
+  script:
+    - pnpm lint
+    - pnpm format:check
+
+typecheck:
+  stage: check
+  script:
+    - pnpm typecheck
+
+unit-tests:
+  stage: check
+  script:
+    - pnpm test
+
+build:
+  stage: build
+  script:
+    - pnpm build
+  cache:
+    - key:
+        files:
+          - pnpm-lock.yaml
+      paths:
+        - .pnpm-store/
+    - key: next-cache-$CI_COMMIT_REF_SLUG
+      paths:
+        - .next/cache/
+  artifacts:
+    paths:
+      - .next/standalone/
+    expire_in: 1 day

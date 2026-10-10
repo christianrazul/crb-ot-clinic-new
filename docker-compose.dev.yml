@@ -1,0 +1,26 @@
+# Local development database. Production uses docker-compose.prod.yml (Milestone 13).
+name: crb-ot-clinic
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crb
+      POSTGRES_PASSWORD: crb
+      POSTGRES_DB: crb
+      TZ: UTC
+    ports:
+      # Host port 5433 avoids clashing with a locally installed Postgres on 5432.
+      # Bound to localhost only, so the dev database is never reachable from the network.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - crb-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crb -d crb"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  crb-db-data:
