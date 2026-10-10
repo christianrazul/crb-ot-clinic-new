@@ -211,6 +211,9 @@
   }
   body {
     @apply bg-sidebar font-sans text-sm text-foreground antialiased;
+    /* A fixed 20px, as in Tailwind v3 (the mockup): children with arbitrary
+       sizes such as text-[13px] inherit it, instead of v4's unitless ratio. */
+    line-height: 1.25rem;
     font-feature-settings: "ss01", "cv11";
   }
 }

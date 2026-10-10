@@ -27,3 +27,6 @@ pnpm-debug.log*
 
 # local Claude settings
 .claude/settings.local.json
+
+# CI caches
+.cache/

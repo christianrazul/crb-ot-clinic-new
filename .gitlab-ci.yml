@@ -24,6 +24,7 @@ cache:
 stages:
   - check
   - build
+  - e2e
 
 workflow:
   rules:
@@ -65,3 +66,27 @@ build:
     paths:
       - .next/standalone/
     expire_in: 1 day
+
+e2e:
+  stage: e2e
+  needs: []
+  variables:
+    PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/.cache/ms-playwright
+  script:
+    - pnpm exec playwright install --with-deps chromium
+    - pnpm test:e2e
+  cache:
+    - key:
+        files:
+          - pnpm-lock.yaml
+      paths:
+        - .pnpm-store/
+    - key: playwright-1.63.0
+      paths:
+        - .cache/ms-playwright/
+  artifacts:
+    when: on_failure
+    paths:
+      - playwright-report/
+      - test-results/
+    expire_in: 7 days

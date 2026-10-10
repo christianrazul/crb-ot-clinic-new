@@ -29,6 +29,9 @@ export default defineConfig({
       DATABASE_URL: process.env.DATABASE_URL ?? "postgres://crb:crb@localhost:5433/crb",
       NEXT_PUBLIC_APP_URL: baseURL,
       NEXT_PUBLIC_DEV_ROLE_SWITCHER: "true",
+      // The standalone server binds to $HOSTNAME, which Docker sets to the
+      // container id. Bind to every interface so localhost reaches it in CI.
+      HOSTNAME: "0.0.0.0",
     },
   },
 });

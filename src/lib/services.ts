@@ -13,6 +13,15 @@ export const SERVICE_LABELS: Record<ServiceKey, string> = {
   none: "Uncategorized",
 };
 
+/** Compact labels for badges, legends and "OT with Dela Rosa". */
+export const SERVICE_SHORT: Record<ServiceKey, string> = {
+  ot: "OT",
+  speech: "Speech",
+  sped: "SPED",
+  aide: "OT Aide",
+  none: "Other",
+};
+
 /** Solid dot or bar, e.g. the service dot next to a session type. */
 export const SERVICE_BG: Record<ServiceKey, string> = {
   ot: "bg-svc-ot",

@@ -69,3 +69,10 @@ describe("day helpers", () => {
     expect(manilaHour(justAfterManilaMidnight)).toBe(1);
   });
 });
+
+describe("weekday formats", () => {
+  it("formats the session dialog dates", () => {
+    expect(formatManila(mondayNineAm, "weekdayDate")).toBe("Monday, Oct 12, 2026");
+    expect(formatManila(mondayNineAm, "weekdayDay")).toBe("Monday, Oct 12");
+  });
+});

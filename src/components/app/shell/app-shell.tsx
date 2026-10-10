@@ -2,6 +2,8 @@
 
 import type * as React from "react";
 
+import { DemoStoreProvider } from "@/components/app/demo/demo-store";
+import { DialogHost } from "@/components/app/dialogs/dialog-host";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { BranchFixture } from "@/lib/fixtures/branches";
 import type { UserFixture } from "@/lib/fixtures/users";
@@ -35,23 +37,27 @@ export function AppShell({
   return (
     <ShellProvider defaultCollapsed={sidebarCollapsed}>
       <TooltipProvider delayDuration={200}>
-        <div className="flex h-dvh w-full overflow-hidden bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-          <AppSidebar
-            user={user}
-            branch={branch}
-            branches={branches}
-            showRoleSwitcher={showRoleSwitcher}
-          />
-          <div className="flex min-w-0 flex-1 flex-col md:py-2 md:pr-2">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-xl md:border md:shadow-xs">
-              <AppHeader branchName={branch.name} role={user.role} />
-              <main id="main" className="min-h-0 flex-1 overflow-y-auto">
-                {children}
-              </main>
+        <DemoStoreProvider user={user} branch={branch}>
+          <DialogHost>
+            <div className="flex h-dvh w-full overflow-hidden bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+              <AppSidebar
+                user={user}
+                branch={branch}
+                branches={branches}
+                showRoleSwitcher={showRoleSwitcher}
+              />
+              <div className="flex min-w-0 flex-1 flex-col md:py-2 md:pr-2">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-xl md:border md:shadow-xs">
+                  <AppHeader branchName={branch.name} role={user.role} />
+                  <main id="main" className="min-h-0 flex-1 overflow-y-auto">
+                    {children}
+                  </main>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <CommandMenu role={user.role} />
+            <CommandMenu />
+          </DialogHost>
+        </DemoStoreProvider>
       </TooltipProvider>
     </ShellProvider>
   );

@@ -86,6 +86,12 @@ Rules that keep this layout safe:
 - Money is always integer centavos. Use `formatPeso()` from `lib/money` to display it.
 - Timestamps are stored in UTC. Display them with the helpers in `lib/dates`, which use `Asia/Manila`.
 
+## Demo data (until Milestone 3)
+
+The app runs on typed fixtures in `src/lib/fixtures/`, frozen at Saturday, August 22, 2026, 10:20 AM Manila time: two branches, five staff, sixteen patients, five weeks of sessions, three credit ledgers and this morning's payments. All the data is at CRB Bangkal; switch to Panabo to see the empty states.
+
+Every screen reads and changes an in-memory demo store (`src/components/app/demo/demo-store.tsx`). Booking, check-in, payments, notes and settings all work, and **everything resets when you reload the page**. Use the "Preview as" switcher in the sidebar to see each role.
+
 ## UI components
 
 Components in `src/components/ui` were generated with the shadcn CLI (`new-york` style, Radix) and then restyled with the mockup's classes. To add another one:

@@ -2,8 +2,8 @@
 
 import { PanelLeft, Plus, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { toast } from "sonner";
 
+import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
@@ -16,13 +16,9 @@ import { useShell } from "./shell-context";
 import { ThemeToggle } from "./theme-toggle";
 import { useModKeyLabel } from "./use-mod-key";
 
-/** Placeholder until the booking dialog is built in Milestone 2. */
-export function openNewSession() {
-  toast.info("Booking is not built yet", { description: "It arrives in Milestone 2." });
-}
-
 export function AppHeader({ branchName, role }: { branchName: string; role: Role }) {
   const { toggleSidebar, setCommandOpen } = useShell();
+  const { openDialog } = useDialogs();
   const modKey = useModKeyLabel();
   const screen = screenFromPathname(usePathname());
   const showNewSession =
@@ -78,7 +74,11 @@ export function AppHeader({ branchName, role }: { branchName: string; role: Role
         <ThemeToggle />
         <NotificationsMenu />
         {showNewSession && (
-          <Button size="sm" onClick={openNewSession} aria-label="New session">
+          <Button
+            size="sm"
+            onClick={() => openDialog({ kind: "booking" })}
+            aria-label="New session"
+          >
             <Plus /> <span className="hidden sm:inline">New session</span>
           </Button>
         )}

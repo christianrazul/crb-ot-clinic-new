@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app/page-placeholder";
+import { requireScreen } from "@/server/session/require-screen";
+
+import { TodayScreen } from "./_components/today-screen";
 
 export const metadata: Metadata = { title: "Today" };
 
-export default function Page() {
-  return <PagePlaceholder screen="today" />;
+export default async function Page() {
+  await requireScreen("today");
+  return <TodayScreen />;
 }

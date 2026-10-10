@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 
-import { PagePlaceholder } from "@/components/app/page-placeholder";
+import { requireScreen } from "@/server/session/require-screen";
 
-export const metadata: Metadata = { title: "Billing & payments" };
+import { BillingScreen } from "./_components/billing-screen";
 
-export default function Page() {
-  return <PagePlaceholder screen="billing" />;
+export const metadata: Metadata = { title: "Billing and payments" };
+
+export default async function Page() {
+  await requireScreen("billing");
+  return <BillingScreen />;
 }

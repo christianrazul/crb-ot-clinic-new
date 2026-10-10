@@ -9,6 +9,8 @@ test("home redirects to the role home without console errors", async ({ page }) 
   await page.goto("/");
 
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Good morning, Camelia" }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

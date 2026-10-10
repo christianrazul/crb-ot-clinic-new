@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { PagePlaceholder } from "@/components/app/page-placeholder";
+import { requireScreen } from "@/server/session/require-screen";
+
+import { SettingsScreen } from "./_components/settings-screen";
 
 export const metadata: Metadata = { title: "Settings" };
 
-export default function Page() {
-  return <PagePlaceholder screen="settings" />;
+export default async function Page() {
+  await requireScreen("settings");
+  return (
+    <Suspense>
+      <SettingsScreen />
+    </Suspense>
+  );
 }

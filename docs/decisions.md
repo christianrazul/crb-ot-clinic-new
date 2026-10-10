@@ -134,3 +134,81 @@ The shadcn registry's `calendar` targets react-day-picker 10, so we pinned 10.0.
 The brief and the mockup both specify the primary clay color as `hsl(21 70% 45%)`. It measured 4.19:1 for button text (primary-foreground on primary) and 4.35:1 for primary-colored text on white, both below the 4.5:1 that WCAG AA requires for normal text, which the brief makes a hard requirement.
 
 The owner chose to darken it two lightness points, to `hsl(21 70% 43%)` (`#ba5721`). It now measures 4.52:1 and 4.70:1. `--ring` follows it. Dark mode was already AA and is unchanged. This is the one intentional color difference from the mockup.
+
+## Milestone 2: every screen with static data
+
+### D-024: A frozen demo clock
+
+The mockup is frozen at Saturday, August 22, 2026, 10:20 AM Manila time, and so is the static front end (`src/lib/fixtures/demo-clock.ts`). Fixtures, the now line, "Up next" and the billing day all use it, so the demo looks the same whenever it runs.
+
+The mockup's dashboard says "Sunday, August 23", but the clinic is closed on Sundays and every other screen says Saturday the 22nd, so we treat that as a typo in the mockup. The real clock replaces the demo clock when screens move to the database (Milestones 5 to 9).
+
+### D-025: One coherent dataset instead of the mockup's separate lists
+
+The mockup hard-codes separate lists that contradict each other: the day grid, the week grid, the check-in queue, the billing rows, the therapist's day and "Up next". The week grid even names two patients (Kyla Aquino, Marco Villar) who aren't among the sixteen.
+
+We kept the mockup's patients, staff, ledgers and figures, and generated appointments for five weeks from its day grid (Saturdays) and week grid (Monday to Friday), with Kyla and Marco replaced by roster patients. Every other screen derives from that one set. Checking a patient in on Today shows on the schedule, collecting a payment marks billing, and a therapist's note clears "Notes due". Layout and behavior match the mockup; some sample rows differ.
+
+Today's sessions at 10:20 are set up so the desk has something to do:
+
+- 9:00 sessions are attended
+- 10:00 sessions are checked in
+- later sessions are scheduled
+- some of the morning is already paid
+
+Enzo Dela Peña and Althea Mendoza have the past no-shows behind "Frequent no-shows".
+
+### D-026: A demo store shaped like the future database
+
+All screens read and change one in-memory store (`src/components/app/demo/demo-store.tsx`), driven by a pure reducer (`src/lib/demo/reducer.ts`). Its slices mirror the planned tables: appointments with fee snapshots, payments, the credit ledger, append-only notes, and soft-deleted patients. Its actions mirror the future Server Actions.
+
+The reducer enforces the brief's rules and is unit tested:
+
+- no double booking of staff or patients
+- open days and hours only
+- therapists filtered by rate class
+- inactive patients cannot be booked
+- 8-week recurring series
+- "this and all future" cancellation
+- rescheduling into a linked make-up session
+- one payment per appointment
+- credit deducted in the same step as the payment
+- gapless receipt numbers
+- references required for non-cash methods
+- rate changes never touch existing fees
+
+The booking rules live in `validateBooking()`, which the dialog calls to show a message and the reducer calls again before saving, just as the server will. The store resets on reload; that is expected until the database lands.
+
+### D-027: Business maths in pure, tested functions
+
+`quotePayment()` (credit up to min(balance, due), cash change, short by, references), `payrollLine()` (the clinic keeps the rounding remainder, so the shares always add up to the gross), `creditBalance()` (always the sum of the ledger) and the booking helpers are plain functions in `src/lib`. Milestones 7 to 10 call the same functions on the server.
+
+### D-028: Small departures from the mockup, on purpose
+
+- **Ages:** computed from date of birth, so Caleb Uy shows 5 and Elle Bautista 2, where the mockup hard-coded 6 and 3.
+- **Payments need a reference:** for non-cash methods, as the brief requires. The mockup allowed a blank one.
+- **Billing lists only sessions that have started:** checked in or attended, because the desk collects after each session. Listing all 14 of the day's sessions showed "Pending" for sessions hours away.
+- **Therapists never see money:** no "owes" amounts, no Credit tab, no balance sort, and only patients where they are primary or backup. The mockup showed therapists every patient and their balances.
+- **The therapist note dialog shows the two most recent notes,** as the mockup does. Showing more made the dialog taller than the screen and scrolled the session facts out of view.
+- **Session type names follow the brief:** "SPED Tutoring", not the mockup's "SPED session".
+- **Actions for later milestones show an info toast:** editing patient details, assigning a backup, editing staff and editing branches.
+
+### D-029: URL state, by id only
+
+The selected patient and tab (`/patients?patient=pat_05&tab=credit`) and the settings section (`/settings?tab=rates`) live in the URL, so notifications, the command palette and dashboard links open the right place. URLs carry ids, never names (brief: no patient data in URLs). Schedule view and date stay in local state.
+
+### D-030: Tailwind v4 differences from the mockup's v3
+
+The mockup is Tailwind v3, and three v4 differences showed up as layout bugs.
+
+1. **Inherited line-height:** v3's `text-sm` sets a fixed 20px line-height that children inherit, while v4 sets a ratio. Text with an arbitrary size such as `text-[13px]` came out about 1.4px shorter per line. The body now sets `line-height: 1.25rem`, and measured text positions match the mockup to the pixel.
+2. **Dividers:** `divide-x` clashed with per-column border rules in the stat strip, so we use explicit borders.
+3. **Breakpoint sorting:** arbitrary breakpoints in px (`min-[1400px]`) don't sort after rem breakpoints (`xl`). We write them in rem (`min-[87.5rem]`).
+
+### D-031: Charts clip their first frame
+
+Recharts first renders at 320px before measuring its container. On a 360px phone that widened the page by 50px for a moment, which a flaky end-to-end test caught. The chart container now has `min-w-0 overflow-hidden`; a per-frame probe confirmed the overflow went from 50px to 0.
+
+### D-032: End-to-end tests in CI
+
+The pipeline gains an `e2e` job: Node 24, Chromium installed with `--with-deps`, and the browser cached by Playwright version. Next's standalone server binds to `$HOSTNAME`, which Docker sets to the container id, so the test server sets `HOSTNAME=0.0.0.0`. The production image in Milestone 13 needs the same.

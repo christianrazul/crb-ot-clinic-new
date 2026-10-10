@@ -14,6 +14,12 @@ export const DATE_FORMATS = {
   shortDay: "EEE, MMM d",
   /** Monday, October 12, 2026 */
   longDay: "EEEE, MMMM d, yyyy",
+  /** Monday, Oct 12, 2026 */
+  weekdayDate: "EEEE, MMM d, yyyy",
+  /** Monday, Oct 12 */
+  weekdayDay: "EEEE, MMM d",
+  /** Monday, October 12 */
+  weekdayDayLong: "EEEE, MMMM d",
   /** Oct 12, 2026 */
   date: "MMM d, yyyy",
   /** 9:00 AM */

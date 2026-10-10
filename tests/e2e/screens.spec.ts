@@ -1,0 +1,271 @@
+import { expect, type Page, test } from "@playwright/test";
+
+import { previewAs } from "./helpers";
+
+const SCREENS = {
+  superadmin: [
+    ["/dashboard", "Good morning, Camelia"],
+    ["/schedule", "Schedule"],
+    ["/patients", "Patients"],
+    ["/billing", "Billing and payments"],
+    ["/payroll", "Payroll"],
+    ["/settings", "Settings"],
+  ],
+  secretary: [
+    ["/today", "Good morning, Jo"],
+    ["/schedule", "Schedule"],
+    ["/patients", "Patients"],
+    ["/billing", "Billing and payments"],
+  ],
+  therapist: [
+    ["/my-day", "Good morning, Jolyn"],
+    ["/schedule", "My schedule"],
+    ["/patients", "My patients"],
+  ],
+} as const;
+
+test.describe("every screen for every role", () => {
+  for (const [role, screens] of Object.entries(SCREENS)) {
+    test(`${role} screens render without console errors`, async ({ page, context, baseURL }) => {
+      await previewAs(context, baseURL!, role as keyof typeof SCREENS);
+      const errors: string[] = [];
+      page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+      page.on("pageerror", (e) => errors.push(e.message));
+
+      for (const [path, heading] of screens) {
+        await page.goto(path);
+        await expect(page.getByRole("heading", { level: 1, name: heading })).toBeAttached();
+      }
+      expect(errors).toEqual([]);
+    });
+  }
+});
+
+// The flows below change in-memory demo state, so each test starts on a fresh page.
+test.describe("front desk flows", () => {
+  test.skip(({ isMobile }) => isMobile, "Desktop layout");
+  test.beforeEach(async ({ context, baseURL }) => previewAs(context, baseURL!, "secretary"));
+
+  const pickPatient = async (page: Page, name: string) => {
+    await page.getByLabel("Patient").click();
+    await page.getByPlaceholder("Type a name").fill(name);
+    // Anchored, so "Add new patient <name>" is not matched.
+    await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
+  };
+  const pickSelect = async (page: Page, label: string, option: string | RegExp) => {
+    await page.getByLabel(label).click();
+    await page.getByRole("option", { name: option }).click();
+  };
+
+  test("book a one-off session", async ({ page }) => {
+    await page.goto("/schedule");
+    await page.getByRole("button", { name: "New session" }).click();
+    const dialog = page.getByRole("dialog", { name: "New session" });
+    await pickPatient(page, "Franco Lee");
+    await pickSelect(page, "Therapist", /Marco Tan/);
+    await pickSelect(page, "Time", "4:00 PM");
+    await dialog.getByRole("button", { name: "Book session" }).click();
+
+    await expect(page.getByText("Session booked for Franco Lee")).toBeVisible();
+    await page.getByRole("button", { name: "Next day" }).click();
+    await expect(page.getByRole("heading", { name: "Mon, Aug 24, 2026" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Franco Lee/ })).toBeVisible();
+  });
+
+  test("double booking is rejected with a clear message", async ({ page }) => {
+    await page.goto("/schedule");
+    // Tan is free at 9:00 today, but Liam Santos is already with Dela Rosa.
+    // Clicking the empty slot pre-fills Tan, today and 9:00.
+    await page.getByRole("button", { name: "Book Tan at 9:00 AM" }).click();
+    const dialog = page.getByRole("dialog", { name: "New session" });
+    await expect(dialog.getByRole("button", { name: "Date" })).toHaveText(/Sat, Aug 22/);
+    await pickPatient(page, "Liam Santos");
+    await dialog.getByRole("button", { name: "Book session" }).click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      "Liam Santos already has a session at 9:00 AM",
+    );
+  });
+
+  test("check in from the Today queue updates the schedule", async ({ page }) => {
+    await page.goto("/today");
+    await page.getByRole("button", { name: "Check in Franco Lee" }).click();
+    await expect(page.getByText("Franco Lee checked in")).toBeVisible();
+
+    await page.getByRole("link", { name: "Schedule" }).click();
+    await expect(page.getByRole("button", { name: /Franco Lee.*Checked in/ })).toBeVisible();
+  });
+
+  test("mark attended from the session dialog", async ({ page }) => {
+    await page.goto("/schedule");
+    await page.getByRole("button", { name: /Gab Torres/ }).click();
+    await page.getByRole("button", { name: "Mark attended" }).click();
+    await expect(page.getByText("Gab Torres: attended")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Gab Torres.*Attended/ })).toBeVisible();
+  });
+
+  test("cancelling a recurring session asks how far", async ({ page }) => {
+    await page.goto("/schedule");
+    await page.getByRole("button", { name: /Iggy Navarro/ }).click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByText("Cancel a recurring session")).toBeVisible();
+    await page.getByRole("button", { name: /This and all future sessions/ }).click();
+    await expect(page.getByText("Iggy Navarro: weekly booking ended")).toBeVisible();
+
+    // Next Saturday's session in the same series is cancelled too.
+    await page.getByRole("radio", { name: "Week" }).click();
+    await page.getByRole("button", { name: "Next week" }).click();
+    await page.getByRole("button", { name: /Open Saturday, Aug 29/ }).click();
+    await expect(page.getByRole("button", { name: /Iggy Navarro.*Cancelled/ })).toBeVisible();
+  });
+
+  test("reschedule into a make-up session", async ({ page }) => {
+    await page.goto("/schedule");
+    await page.getByRole("button", { name: /Caleb Uy/ }).click();
+    await page.getByRole("button", { name: "Reschedule" }).click();
+    const dialog = page.getByRole("dialog", { name: "Reschedule session" });
+    await expect(dialog.getByText("Moving")).toBeVisible();
+    await pickSelect(page, "Time", "3:00 PM");
+    await dialog.getByRole("button", { name: "Confirm reschedule" }).click();
+
+    await expect(page.getByText("Caleb Uy moved")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Caleb Uy.*Rescheduled/ })).toBeVisible();
+  });
+
+  test("collect a payment with advance credit", async ({ page }) => {
+    await page.goto("/billing");
+    await page.getByRole("button", { name: "Collect payment from Enzo Dela Peña" }).click();
+    const dialog = page.getByRole("dialog", { name: "Collect payment" });
+    await expect(dialog.getByText("Credit covers this session in full")).toBeVisible();
+    await dialog.getByRole("button", { name: "Pay ₱700 from credit" }).click();
+
+    await expect(page.getByText("Payment recorded for Enzo Dela Peña")).toBeVisible();
+    const row = page.getByRole("row", { name: /Enzo Dela Peña/ });
+    await expect(row.getByText("Paid")).toBeVisible();
+    await expect(row.getByText("Credit ₱4,200")).toBeVisible();
+  });
+
+  test("cash must cover the fee and shows change", async ({ page }) => {
+    await page.goto("/billing");
+    await page.getByRole("button", { name: "Collect payment from Gab Torres" }).click();
+    const dialog = page.getByRole("dialog", { name: "Collect payment" });
+    const confirm = dialog.getByRole("button", { name: "Confirm ₱700" });
+
+    await dialog.getByLabel("Cash received").fill("500");
+    await expect(dialog.getByText("Short by")).toBeVisible();
+    await expect(confirm).toBeDisabled();
+
+    await dialog.getByRole("button", { name: "₱1,000" }).click();
+    await expect(dialog.getByText("Change")).toBeVisible();
+    await expect(dialog.getByText("₱300")).toBeVisible();
+    await confirm.click();
+    await expect(page.getByText("Payment recorded for Gab Torres")).toBeVisible();
+  });
+
+  test("record an advance payment; non-cash needs a reference", async ({ page }) => {
+    await page.goto("/billing");
+    await page.getByRole("button", { name: "Record advance payment" }).click();
+    const dialog = page.getByRole("dialog", { name: "Record advance payment" });
+    await pickPatient(page, "Amara Cruz");
+    await dialog.getByRole("button", { name: /₱3,500/ }).click();
+    await dialog.getByRole("radio", { name: "GCash" }).click();
+
+    const record = dialog.getByRole("button", { name: "Record ₱3,500" });
+    await expect(record).toBeDisabled();
+    await dialog.getByLabel("Reference no.").fill("0031 9981 004");
+    await record.click();
+    await expect(page.getByText("Advance recorded for Amara Cruz")).toBeVisible();
+    await expect(page.getByText("4 patients with credit")).toBeVisible();
+  });
+
+  test("inactive patients cannot be booked", async ({ context, page, baseURL }) => {
+    await previewAs(context, baseURL!, "superadmin");
+    await page.goto("/settings?tab=patients");
+    await page.getByRole("switch", { name: "Hana Sy active" }).click();
+    // Navigate inside the app: a full reload would reset the in-memory demo state.
+    await page.getByRole("link", { name: "Schedule" }).click();
+    await page.getByRole("button", { name: "New session" }).click();
+    await page.getByLabel("Patient").click();
+    await page.getByPlaceholder("Type a name").fill("Hana");
+    await expect(page.getByRole("option", { name: /^Hana Sy/ })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: /^Add new patient/ })).toBeVisible();
+  });
+});
+
+test.describe("patients", () => {
+  test.skip(({ isMobile }) => isMobile, "Desktop layout");
+
+  test("search, filter, keyboard open and empty state", async ({ page }) => {
+    await page.goto("/patients");
+    await page.getByRole("radio", { name: "SPED" }).click();
+    await expect(page.locator("tbody tr")).toHaveCount(3);
+
+    await page.getByRole("row", { name: /Jaz Ocampo/ }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/patient=pat_15/);
+    await expect(page.getByRole("heading", { level: 2, name: "Jaz Ocampo" })).toBeVisible();
+
+    await page.getByLabel("Search by patient or guardian").fill("nobody here");
+    await expect(page.getByText("No patients match these filters")).toBeVisible();
+  });
+
+  test("credit tab shows the ledger with a running balance", async ({ page }) => {
+    await page.goto("/patients?patient=pat_01&tab=credit");
+    await expect(page.getByText("₱4,200").first()).toBeVisible();
+    await expect(page.getByText("10-session OT package")).toBeVisible();
+    await expect(page.getByText("Bal. ₱7,000")).toBeVisible();
+  });
+});
+
+test.describe("therapist", () => {
+  test.beforeEach(async ({ context, baseURL }) => previewAs(context, baseURL!, "therapist"));
+
+  test("only sees their own patients and no billing or credit", async ({ page }) => {
+    await page.goto("/patients");
+    await expect(page.getByRole("tab", { name: /Credit/ })).toHaveCount(0);
+    await expect(page.getByText(/owes/)).toHaveCount(0);
+    // Sofia Reyes is a SPED patient with no link to Dela Rosa.
+    await expect(page.getByRole("row", { name: /Sofia Reyes/ })).toHaveCount(0);
+    await expect(page.getByRole("row", { name: /Liam Santos/ })).toBeVisible();
+
+    await page.goto("/billing");
+    await expect(page).toHaveURL(/\/my-day$/);
+  });
+
+  test("adds a note and clears it from notes due", async ({ page }) => {
+    await page.goto("/my-day");
+    await expect(page.getByText("Due today")).toBeVisible();
+    await page.getByRole("button", { name: "Add note for Liam Santos" }).click();
+    const dialog = page.getByRole("dialog", { name: "Liam Santos" });
+    await dialog.getByLabel("Add a session note").fill("Worked on pencil grip. Good focus today.");
+    await dialog.getByRole("button", { name: "Save note" }).click();
+    await expect(page.getByText("Session note saved")).toBeVisible();
+    await expect(dialog.getByText("Worked on pencil grip. Good focus today.")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByText("Due today")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open notes for Liam Santos" })).toBeVisible();
+  });
+});
+
+test.describe("narrow phones", () => {
+  test.use({ viewport: { width: 360, height: 780 } });
+
+  for (const [role, screens] of Object.entries(SCREENS)) {
+    test(`${role} screens never scroll sideways at 360px`, async ({ page, context, baseURL }) => {
+      await previewAs(context, baseURL!, role as keyof typeof SCREENS);
+      for (const [path] of screens) {
+        await page.goto(path);
+        await expect(page.getByRole("heading", { level: 1 })).toBeAttached();
+        // Wide grids and tables scroll inside their own container, never the page.
+        const overflow = await page.evaluate(() => {
+          const main = document.getElementById("main")!;
+          return {
+            page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            main: main.scrollWidth - main.clientWidth,
+          };
+        });
+        expect(overflow, path).toEqual({ page: 0, main: 0 });
+      }
+    });
+  }
+});
