@@ -54,10 +54,11 @@ A pre-commit hook (Husky and lint-staged) lints and formats staged files.
 
 Every variable is validated at boot by [src/env.schema.ts](src/env.schema.ts). If one is missing or malformed, the server prints which one and exits. Server code reads values from `env` in [src/env.ts](src/env.ts), never from `process.env` directly.
 
-| Variable              | Example                                 | Purpose                    |
-| --------------------- | --------------------------------------- | -------------------------- |
-| `DATABASE_URL`        | `postgres://crb:crb@localhost:5433/crb` | Postgres connection string |
-| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000`                 | Public URL of the app      |
+| Variable                        | Example                                 | Purpose                                                                                     |
+| ------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | `postgres://crb:crb@localhost:5433/crb` | Postgres connection string                                                                  |
+| `NEXT_PUBLIC_APP_URL`           | `http://localhost:3000`                 | Public URL of the app                                                                       |
+| `NEXT_PUBLIC_DEV_ROLE_SWITCHER` | `true`                                  | Shows the "Preview as" role switcher in the sidebar. Development only; defaults to `false`. |
 
 ## Project layout
 
@@ -65,12 +66,13 @@ Every variable is validated at boot by [src/env.schema.ts](src/env.schema.ts). I
 src/
   app/(auth)/        login and password reset pages
   app/(app)/         the signed-in app
-  components/ui/     shadcn/ui primitives
-  components/app/    app-specific components
+  components/ui/     shadcn/ui primitives, restyled to match the mockup
+  components/app/    app-specific components (shell, SvcDot, StatusBadge, PatientAvatar)
   server/db/         Drizzle schema, client and queries (server only)
   server/services/   business logic; every permission check lives here
   server/auth/       Better Auth setup
-  lib/               shared helpers (money, dates) that are safe on client and server
+  lib/               shared helpers (money, dates, services) that are safe on client and server
+  lib/fixtures/      static demo data used until the database lands (Milestone 3)
   env.ts             validated environment (server only)
 tests/
   unit/              Vitest
@@ -83,6 +85,23 @@ Rules that keep this layout safe:
 - Every server-only module starts with `import "server-only"`.
 - Money is always integer centavos. Use `formatPeso()` from `lib/money` to display it.
 - Timestamps are stored in UTC. Display them with the helpers in `lib/dates`, which use `Asia/Manila`.
+
+## UI components
+
+Components in `src/components/ui` were generated with the shadcn CLI (`new-york` style, Radix) and then restyled with the mockup's classes. To add another one:
+
+```bash
+pnpm dlx shadcn@4.21.0 add <component>
+```
+
+The CLI currently imports `cn` from a separate `cn` npm package. Change that import to `@/lib/utils`, remove `cn` from `package.json`, and match the classes to the mockup. Design tokens live in `src/app/globals.css`. Service colors are Tailwind colors (`bg-svc-ot`, `bg-svc-ot-soft`, `text-svc-ot-strong`, and so on); pick them through the maps in `src/lib/services.ts` rather than building class names from strings.
+
+## Keyboard shortcuts
+
+| Shortcut     | Action                                                    |
+| ------------ | --------------------------------------------------------- |
+| Ctrl/Cmd + K | Open the command palette                                  |
+| Ctrl/Cmd + B | Collapse or expand the sidebar (opens the menu on mobile) |
 
 ## Continuous integration
 

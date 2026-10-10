@@ -13,6 +13,11 @@ export const envSchema = z.object({
       message: "must be a postgres:// or postgresql:// connection string",
     }),
   NEXT_PUBLIC_APP_URL: z.url(),
+  /** Shows the "Preview as" role switcher. Development only; removed in Milestone 4. */
+  NEXT_PUBLIC_DEV_ROLE_SWITCHER: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

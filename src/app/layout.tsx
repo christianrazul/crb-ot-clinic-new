@@ -1,17 +1,40 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Figtree } from "next/font/google";
+
+import { ThemeProvider } from "@/components/app/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
 
+// Variable font: one file covers the 400 to 700 weights the design uses.
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", display: "swap" });
+
 export const metadata: Metadata = {
-  title: "CRB OT Clinic",
+  title: { default: "CRB OT Clinic", template: "%s · CRB OT Clinic" },
   description: "Clinic management for CRB OT Clinic",
   robots: { index: false, follow: false },
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf8f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e0c0b" },
+  ],
+};
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    // next-themes sets data-theme before React hydrates, so the attribute differs from the server.
+    <html lang="en" className={figtree.variable} suppressHydrationWarning>
+      <body>
+        <ThemeProvider>
+          {children}
+          <Toaster />
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

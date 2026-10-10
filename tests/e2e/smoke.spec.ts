@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("home page renders without console errors", async ({ page }) => {
+test("home redirects to the role home without console errors", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -8,6 +8,7 @@ test("home page renders without console errors", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "CRB OT Clinic" })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -24,5 +24,11 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
+    // Explicit values so the suite runs the same with or without a local .env.
+    env: {
+      DATABASE_URL: process.env.DATABASE_URL ?? "postgres://crb:crb@localhost:5433/crb",
+      NEXT_PUBLIC_APP_URL: baseURL,
+      NEXT_PUBLIC_DEV_ROLE_SWITCHER: "true",
+    },
   },
 });

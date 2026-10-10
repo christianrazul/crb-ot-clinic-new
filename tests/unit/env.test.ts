@@ -10,7 +10,14 @@ const valid = {
 
 describe("parseEnv", () => {
   it("accepts a valid environment", () => {
-    expect(parseEnv(valid)).toEqual(valid);
+    expect(parseEnv(valid)).toEqual({ ...valid, NEXT_PUBLIC_DEV_ROLE_SWITCHER: false });
+  });
+
+  it("turns the role switcher flag into a boolean", () => {
+    expect(
+      parseEnv({ ...valid, NEXT_PUBLIC_DEV_ROLE_SWITCHER: "true" }).NEXT_PUBLIC_DEV_ROLE_SWITCHER,
+    ).toBe(true);
+    expect(() => parseEnv({ ...valid, NEXT_PUBLIC_DEV_ROLE_SWITCHER: "yes" })).toThrow();
   });
 
   it("defaults NODE_ENV to development", () => {
