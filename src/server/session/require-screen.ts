@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { canSeeScreen, ROLE_HOME, type ScreenKey } from "@/components/app/shell/nav";
 
-import { getShellSession } from "./preview";
+import { getShellSession } from "./shell";
 
 /**
  * Sends roles without the screen in their navigation back to their home.

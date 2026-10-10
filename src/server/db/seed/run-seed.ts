@@ -2,6 +2,8 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 
+import { hashPassword } from "better-auth/crypto";
+
 import type { Database } from "../client";
 import * as t from "../schema";
 import { buildSeedRows } from "./seed-data";
@@ -39,12 +41,26 @@ export async function truncateAll(db: Database) {
   );
 }
 
+/** Default password for the demo accounts outside production; override with SEED_PASSWORD. */
+export const DEFAULT_SEED_PASSWORD = "crb-demo-password";
+
 /** Loads the demo clinic into an empty database, in one transaction. */
-export async function seed(db: Database) {
+export async function seed(db: Database, options: { password?: string } = {}) {
   const rows = buildSeedRows();
+  const passwordHash = await hashPassword(options.password ?? DEFAULT_SEED_PASSWORD);
   await db.transaction(async (tx) => {
     await tx.insert(t.branches).values(rows.branches);
     await tx.insert(t.users).values(rows.users);
+    // Credential accounts in Better Auth's format: provider "credential", hashed password.
+    await tx.insert(t.accounts).values(
+      rows.users.map((u) => ({
+        id: `acc_${u.id}`,
+        accountId: u.id,
+        providerId: "credential",
+        userId: u.id,
+        password: passwordHash,
+      })),
+    );
     await tx.insert(t.userBranches).values(rows.userBranches);
     await tx.insert(t.rateClasses).values(rows.rateClasses);
     await tx.insert(t.staff).values(rows.staff);

@@ -1,15 +1,17 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { ROLE_HOME } from "@/components/app/shell/nav";
 import { env } from "@/env";
-import { BRANCHES } from "@/lib/fixtures/branches";
 import { ROLES } from "@/lib/roles";
-import { BRANCH_COOKIE, PREVIEW_ROLE_COOKIE } from "@/server/session/preview";
+import { auth } from "@/server/auth/auth";
+import { getActor } from "@/server/auth/session";
+import { signInAsSeedUser } from "@/server/auth/dev-preview";
+import { BRANCH_COOKIE } from "@/server/session/shell";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -19,22 +21,26 @@ const COOKIE_OPTIONS = {
   maxAge: 60 * 60 * 24 * 30,
 } as const;
 
-const roleInput = z.enum(ROLES);
-const branchInput = z.string().refine((id) => BRANCHES.some((b) => b.id === id));
-
-/** Development only: switch the previewed role and go to its home screen. */
+/** Development only: sign in as the seeded account for a role. */
 export async function previewAsRole(role: unknown) {
-  if (!env.NEXT_PUBLIC_DEV_ROLE_SWITCHER) {
-    throw new Error("The role switcher is disabled.");
-  }
-  const parsed = roleInput.parse(role);
-  (await cookies()).set(PREVIEW_ROLE_COOKIE, parsed, COOKIE_OPTIONS);
+  const parsed = z.enum(ROLES).parse(role);
+  await signInAsSeedUser(parsed, await headers());
+  (await cookies()).delete(BRANCH_COOKIE);
   redirect(ROLE_HOME[parsed]);
 }
 
-/** Switch the active branch. Milestone 4 adds a check that the user belongs to it. */
+/** Switch the active branch. Only branches the user belongs to are accepted. */
 export async function selectBranch(branchId: unknown) {
-  const parsed = branchInput.parse(branchId);
+  const actor = await getActor();
+  if (!actor) redirect("/login");
+  const parsed = z.string().parse(branchId);
+  if (!actor.branchIds.includes(parsed)) throw new Error("You don't work at that branch.");
   (await cookies()).set(BRANCH_COOKIE, parsed, COOKIE_OPTIONS);
   refresh();
+}
+
+export async function signOut() {
+  await auth.api.signOut({ headers: await headers() });
+  (await cookies()).delete(BRANCH_COOKIE);
+  redirect("/login");
 }

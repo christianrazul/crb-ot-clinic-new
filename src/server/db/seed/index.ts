@@ -25,11 +25,12 @@ async function main() {
   const { db, client } = createDb(url, { max: 1 });
   try {
     await truncateAll(db);
-    const rows = await seed(db);
+    const rows = await seed(db, { password: process.env.SEED_PASSWORD });
     console.log(
       `Seeded ${rows.branches.length} branches, ${rows.staff.length} staff, ${rows.patients.length} patients, ` +
         `${rows.appointments.length} appointments, ${rows.creditLedger.length} credit entries.`,
     );
+    console.log(`Log in as ${rows.users.map((u) => u.email).join(", ")} with SEED_PASSWORD.`);
   } finally {
     await client.end();
   }

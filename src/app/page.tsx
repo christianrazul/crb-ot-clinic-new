@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ROLE_HOME } from "@/components/app/shell/nav";
-import { getShellSession } from "@/server/session/preview";
+import { getShellSession } from "@/server/session/shell";
 
 export default async function HomePage() {
   const { user } = await getShellSession();

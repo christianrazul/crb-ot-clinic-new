@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import * as React from "react";
 
-import { previewAsRole, selectBranch } from "@/app/(app)/actions";
+import { previewAsRole, selectBranch, signOut } from "@/app/(app)/actions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -366,8 +366,7 @@ function UserMenu({
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        {/* Wired to Better Auth in Milestone 4. */}
-        <DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => startTransition(() => signOut())}>
           <LogOut /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>

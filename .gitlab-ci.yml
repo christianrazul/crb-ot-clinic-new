@@ -11,6 +11,7 @@ variables:
   # Non-secret placeholders so env validation passes. No job here talks to a database.
   DATABASE_URL: postgres://crb:crb@localhost:5432/crb
   NEXT_PUBLIC_APP_URL: http://localhost:3000
+  BETTER_AUTH_SECRET: ci-only-placeholder-secret-not-used-anywhere
   NEXT_TELEMETRY_DISABLED: "1"
   HUSKY: "0"
 
@@ -79,8 +80,15 @@ build:
 e2e:
   stage: e2e
   needs: []
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
   variables:
     PLAYWRIGHT_BROWSERS_PATH: $CI_PROJECT_DIR/.cache/ms-playwright
+    POSTGRES_USER: crb
+    POSTGRES_PASSWORD: crb
+    POSTGRES_DB: crb
+    E2E_DATABASE_URL: postgres://crb:crb@postgres:5432/crb_e2e
   script:
     - pnpm exec playwright install --with-deps chromium
     - pnpm test:e2e

@@ -30,3 +30,6 @@ pnpm-debug.log*
 
 # CI caches
 .cache/
+
+# Playwright saved sessions
+tests/e2e/.auth/

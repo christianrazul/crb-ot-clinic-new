@@ -22,7 +22,15 @@ pnpm db:seed
 pnpm dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000 and log in with one of the seeded accounts. The password is `SEED_PASSWORD` from `.env` (`crb-demo-password` by default):
+
+| Role         | Email                    |
+| ------------ | ------------------------ |
+| Clinic owner | `camelia@crbclinic.test` |
+| Front desk   | `jo@crbclinic.test`      |
+| Therapist    | `jolyn@crbclinic.test`   |
+
+In development the sidebar's "Preview as" switcher signs you in as each of these. Password reset emails are printed in the dev server console.
 
 `pnpm db:up` starts Postgres 16 in Docker on **localhost:5433**. It uses 5433, not 5432, so it doesn't clash with a Postgres you may already have installed. Data lives in the `crb-ot-clinic_crb-db-data` volume and survives restarts. `pnpm db:down` stops the database and keeps the data.
 
@@ -55,11 +63,16 @@ A pre-commit hook (Husky and lint-staged) lints and formats staged files.
 
 Every variable is validated at boot by [src/env.schema.ts](src/env.schema.ts). If one is missing or malformed, the server prints which one and exits. Server code reads values from `env` in [src/env.ts](src/env.ts), never from `process.env` directly.
 
-| Variable                        | Example                                 | Purpose                                                                                     |
-| ------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | `postgres://crb:crb@localhost:5433/crb` | Postgres connection string                                                                  |
-| `NEXT_PUBLIC_APP_URL`           | `http://localhost:3000`                 | Public URL of the app                                                                       |
-| `NEXT_PUBLIC_DEV_ROLE_SWITCHER` | `true`                                  | Shows the "Preview as" role switcher in the sidebar. Development only; defaults to `false`. |
+| Variable                        | Example                                  | Purpose                                                                                       |
+| ------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | `postgres://crb:crb@localhost:5433/crb`  | Postgres connection string                                                                    |
+| `NEXT_PUBLIC_APP_URL`           | `http://localhost:3000`                  | Public URL of the app                                                                         |
+| `BETTER_AUTH_SECRET`            | `openssl rand -base64 32`                | Signs sessions and tokens (32+ characters)                                                    |
+| `SMTP_URL`                      | `smtps://user:pass@smtp.example.com:465` | Sends password reset emails. Required in production; unset in development logs emails instead |
+| `EMAIL_FROM`                    | `CRB OT Clinic <no-reply@example.com>`   | Sender for those emails                                                                       |
+| `SEED_PASSWORD`                 | `crb-demo-password`                      | Password for the seeded demo accounts                                                         |
+| `E2E_TEST_MODE`                 | `true`                                   | End-to-end suite only: allows logging emails in a production build. Never set on a server     |
+| `NEXT_PUBLIC_DEV_ROLE_SWITCHER` | `true`                                   | Shows the "Preview as" role switcher in the sidebar. Development only; defaults to `false`.   |
 
 ## Project layout
 
@@ -86,6 +99,14 @@ Rules that keep this layout safe:
 - Every server-only module starts with `import "server-only"`.
 - Money is always integer centavos. Use `formatPeso()` from `lib/money` to display it.
 - Timestamps are stored in UTC. Display them with the helpers in `lib/dates`, which use `Asia/Manila`.
+
+## Sign-in and permissions
+
+Better Auth handles email and password sign-in with database sessions in httpOnly, SameSite=Lax cookies (Secure in production). There is no self sign-up; the clinic owner creates accounts (`src/server/services/users.ts`).
+
+- Sign-in is rate limited (10 tries per 15 minutes per IP and email). Five wrong passwords in a row lock the account for 15 minutes.
+- `src/proxy.ts` sends signed-out visitors to `/login`. That is only a first filter: every page, Server Action and endpoint checks the session again on the server.
+- All permissions live in `src/server/auth/permissions.ts` (`can` and `assertCan`). Services call them on every read and write, scoped to the actor's branches. Therapists only ever get their own patients and sessions.
 
 ## Database
 

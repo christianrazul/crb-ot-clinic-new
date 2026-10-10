@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { previewAs } from "./helpers";
+import { storageFor } from "./helpers";
 
 const SCREENS = {
   superadmin: [
@@ -24,10 +24,11 @@ const SCREENS = {
   ],
 } as const;
 
-test.describe("every screen for every role", () => {
-  for (const [role, screens] of Object.entries(SCREENS)) {
-    test(`${role} screens render without console errors`, async ({ page, context, baseURL }) => {
-      await previewAs(context, baseURL!, role as keyof typeof SCREENS);
+for (const [role, screens] of Object.entries(SCREENS)) {
+  test.describe(`every screen for ${role}`, () => {
+    test.use({ storageState: storageFor(role as keyof typeof SCREENS) });
+
+    test(`${role} screens render without console errors`, async ({ page }) => {
       const errors: string[] = [];
       page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
       page.on("pageerror", (e) => errors.push(e.message));
@@ -38,13 +39,13 @@ test.describe("every screen for every role", () => {
       }
       expect(errors).toEqual([]);
     });
-  }
-});
+  });
+}
 
 // The flows below change in-memory demo state, so each test starts on a fresh page.
 test.describe("front desk flows", () => {
   test.skip(({ isMobile }) => isMobile, "Desktop layout");
-  test.beforeEach(async ({ context, baseURL }) => previewAs(context, baseURL!, "secretary"));
+  test.use({ storageState: storageFor("secretary") });
 
   const pickPatient = async (page: Page, name: string) => {
     await page.getByLabel("Patient").click();
@@ -176,9 +177,12 @@ test.describe("front desk flows", () => {
     await expect(page.getByText("Advance recorded for Amara Cruz")).toBeVisible();
     await expect(page.getByText("4 patients with credit")).toBeVisible();
   });
+});
 
-  test("inactive patients cannot be booked", async ({ context, page, baseURL }) => {
-    await previewAs(context, baseURL!, "superadmin");
+test.describe("owner settings", () => {
+  test.skip(({ isMobile }) => isMobile, "Desktop layout");
+
+  test("inactive patients cannot be booked", async ({ page }) => {
     await page.goto("/settings?tab=patients");
     await page.getByRole("switch", { name: "Hana Sy active" }).click();
     // Navigate inside the app: a full reload would reset the in-memory demo state.
@@ -217,7 +221,7 @@ test.describe("patients", () => {
 });
 
 test.describe("therapist", () => {
-  test.beforeEach(async ({ context, baseURL }) => previewAs(context, baseURL!, "therapist"));
+  test.use({ storageState: storageFor("therapist") });
 
   test("only sees their own patients and no billing or credit", async ({ page }) => {
     await page.goto("/patients");
@@ -247,12 +251,14 @@ test.describe("therapist", () => {
   });
 });
 
-test.describe("narrow phones", () => {
-  test.use({ viewport: { width: 360, height: 780 } });
+for (const [role, screens] of Object.entries(SCREENS)) {
+  test.describe(`narrow phones, ${role}`, () => {
+    test.use({
+      viewport: { width: 360, height: 780 },
+      storageState: storageFor(role as keyof typeof SCREENS),
+    });
 
-  for (const [role, screens] of Object.entries(SCREENS)) {
-    test(`${role} screens never scroll sideways at 360px`, async ({ page, context, baseURL }) => {
-      await previewAs(context, baseURL!, role as keyof typeof SCREENS);
+    test(`${role} screens never scroll sideways at 360px`, async ({ page }) => {
       for (const [path] of screens) {
         await page.goto(path);
         await expect(page.getByRole("heading", { level: 1 })).toBeAttached();
@@ -267,5 +273,5 @@ test.describe("narrow phones", () => {
         expect(overflow, path).toEqual({ page: 0, main: 0 });
       }
     });
-  }
-});
+  });
+}

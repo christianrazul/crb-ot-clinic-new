@@ -261,3 +261,54 @@ We chose this over Testcontainers to avoid a dependency and to reuse the dev ser
 ### D-042: Scripts run Node with the react-server condition
 
 Server modules start with `import "server-only"`, which throws outside React Server Components. The `db:*` scripts run `node --conditions=react-server --import tsx`, which turns that import into a no-op, and Vitest aliases it to an empty module.
+
+## Milestone 4: authentication and authorization
+
+### D-043: scrypt, Better Auth's default, for password hashing
+
+The brief asks for argon2id, "or the auth library's default if it is equivalent". Better Auth hashes with scrypt, which OWASP recommends alongside argon2id: it is memory-hard and resists GPU attacks. Keeping the default means no native module to build in the Docker image. If the clinic wants argon2id specifically, `emailAndPassword.password.hash` and `verify` take a custom pair.
+
+### D-044: Our own sign-in wrapper for rate limiting and lockout
+
+Sign-in goes through a Server Action, which calls `signInWithPassword()` (`src/server/auth/sign-in.ts`). It enforces:
+
+- a database-backed rate limit of 10 tries per 15 minutes per IP and email, so it holds across restarts and instances
+- a lockout of 15 minutes after 5 wrong passwords in a row (`users.failed_login_count`, `locked_until`)
+- refusal for inactive users
+- an audit entry for every success and failure
+
+Messages never reveal whether an email has an account. Better Auth's own rate limiter also guards its HTTP endpoints (5 sign-ins a minute).
+
+### D-045: Sessions and cookies
+
+Sessions are database-backed: 7 days, refreshed daily, revoked everywhere on password reset. Cookies are httpOnly and SameSite=Lax, and Secure in production. Passwords need at least 12 characters, and reset links expire after an hour.
+
+### D-046: One permissions module, checked inside services
+
+`src/server/auth/permissions.ts` maps every action to the roles allowed. A resource can add `branchId` (the actor must belong to that branch) and `ownedByActor` (a therapist's own patient or session).
+
+Services call `assertCan` themselves and take the database as a parameter, so the tests call exactly what the Server Actions call, with the actor the server builds from the session. A therapist asking for another therapist's patient gets "not found", the same as a missing record, so ids cannot be probed.
+
+### D-047: The actor is always built on the server
+
+`getActor()` (`src/server/auth/session.ts`) reads the Better Auth session, then loads the user (who must be active), their branches and their linked staff record from the database. Nothing about role, branch or staff comes from the client. The branch cookie is only a preference, honoured when the user belongs to that branch.
+
+### D-048: Optimistic proxy, real checks everywhere
+
+Next 16 renamed `middleware` to `proxy`. `src/proxy.ts` only checks that a session cookie exists and sends everyone else to `/login`. Pages call `requireActor()` and `requireScreen()`, and Server Actions and services check again.
+
+### D-049: The role switcher signs in as the seed accounts
+
+In development, "Preview as" signs out and signs in as the seeded account for that role, using `SEED_PASSWORD`. The env schema refuses `NEXT_PUBLIC_DEV_ROLE_SWITCHER=true` in production, and the layout hides the switcher there, so production builds never have it.
+
+### D-050: Email in development and in tests
+
+With no `SMTP_URL`, password reset emails are printed to the server console. Production refuses to boot without `SMTP_URL`. The end-to-end suite runs a production build, so it sets `E2E_TEST_MODE=true`, which only relaxes that one rule. Never set it on a server.
+
+### D-051: End-to-end tests sign in for real
+
+Playwright's global setup recreates a `crb_e2e` database and seeds it, so tests never touch dev data. A `setup` project then signs in once per role through `/api/auth/sign-in/email` and saves the sessions, and tests pick a role with `test.use({ storageState: storageFor("secretary") })`. Tests for logging in and out use a fresh, empty session.
+
+### D-052: Accounts are created by the owner, with no known password
+
+`createAccount()` creates the user, a credential account with a random password, branch memberships, and an optional link to a staff record, and writes an audit entry. The new user sets their own password through "Forgot password". The settings screen for this arrives in Milestone 6.

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { isMobileProject, previewAs } from "./helpers";
+import { isMobileProject, storageFor } from "./helpers";
 
 const NAV_BY_ROLE = {
   superadmin: ["Dashboard", "Schedule", "Patients", "Billing & payments", "Payroll", "Settings"],
@@ -10,10 +10,11 @@ const NAV_BY_ROLE = {
 
 const HOME_BY_ROLE = { superadmin: "/dashboard", secretary: "/today", therapist: "/my-day" };
 
-test.describe("navigation per role", () => {
-  for (const role of ["superadmin", "secretary", "therapist"] as const) {
-    test(`${role} sees only their navigation`, async ({ page, context, baseURL }, testInfo) => {
-      await previewAs(context, baseURL!, role);
+for (const role of ["superadmin", "secretary", "therapist"] as const) {
+  test.describe(`navigation for ${role}`, () => {
+    test.use({ storageState: storageFor(role) });
+
+    test(`${role} sees only their navigation`, async ({ page }, testInfo) => {
       await page.goto("/");
       await expect(page).toHaveURL(new RegExp(`${HOME_BY_ROLE[role]}$`));
 
@@ -27,31 +28,32 @@ test.describe("navigation per role", () => {
         ...NAV_BY_ROLE[role],
       ]);
     });
-  }
+  });
+}
 
-  test("therapists are sent home from screens outside their navigation", async ({
-    page,
-    context,
-    baseURL,
-  }) => {
-    await previewAs(context, baseURL!, "therapist");
+test.describe("therapist routing", () => {
+  test.use({ storageState: storageFor("therapist") });
+
+  test("therapists are sent home from screens outside their navigation", async ({ page }) => {
     await page.goto("/payroll");
     await expect(page).toHaveURL(/\/my-day$/);
   });
 
-  test("New session shows for staff on booking screens, never for therapists", async ({
-    page,
-    context,
-    baseURL,
-  }) => {
-    await previewAs(context, baseURL!, "secretary");
+  test("therapists never get New session", async ({ page }) => {
+    await page.goto("/schedule");
+    await expect(page.getByRole("heading", { level: 1 })).toBeAttached();
+    await expect(page.getByRole("button", { name: "New session" })).toHaveCount(0);
+  });
+});
+
+test.describe("front desk header", () => {
+  test.use({ storageState: storageFor("secretary") });
+
+  test("New session shows on booking screens only", async ({ page }) => {
     await page.goto("/today");
     await expect(page.getByRole("button", { name: "New session" })).toBeVisible();
     await page.goto("/billing");
-    await expect(page.getByRole("button", { name: "New session" })).toHaveCount(0);
-
-    await previewAs(context, baseURL!, "therapist");
-    await page.goto("/schedule");
+    await expect(page.getByRole("heading", { level: 1 })).toBeAttached();
     await expect(page.getByRole("button", { name: "New session" })).toHaveCount(0);
   });
 });
