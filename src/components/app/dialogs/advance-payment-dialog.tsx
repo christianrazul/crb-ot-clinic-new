@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { formatManila } from "@/lib/dates";
-import { byId, creditBalanceOf, displayName, visiblePatients } from "@/lib/demo/selectors";
+import { byId, creditBalanceOf, displayName } from "@/lib/demo/selectors";
 import { DEMO_NOW } from "@/lib/fixtures/demo-clock";
 import { formatPeso, pesosToCentavos } from "@/lib/money";
 import type { PaymentMethod } from "@/lib/payment-methods";
@@ -42,8 +42,13 @@ type Props = { open: boolean; onOpenChange: (open: boolean) => void; patientId?:
 
 /** Advance payment: non-refundable credit added to the patient's ledger. */
 export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPatientId }: Props) {
-  const { state, dispatch, viewer } = useDemoStore();
+  const { state, dispatch } = useDemoStore();
   const [patientId, setPatientId] = React.useState<string | null>(lockedPatientId ?? null);
+  const [selectedPatient, setSelectedPatient] = React.useState<{
+    id: string;
+    name: string;
+    service: "ot" | "speech" | "sped" | "aide" | "none";
+  } | null>(null);
   const [query, setQuery] = React.useState("");
   const [amountText, setAmountText] = React.useState("");
   const [method, setMethod] = React.useState<PaymentMethod>("cash");
@@ -99,11 +104,14 @@ export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPati
               <PatientCombobox
                 id="tu-patient"
                 value={patientId}
+                selected={selectedPatient}
                 query={query}
                 onQueryChange={setQuery}
-                patients={visiblePatients(state, viewer.role, viewer.staffId, viewer.branchId)}
                 creditOf={(id) => creditBalanceOf(state, id)}
-                onPick={setPatientId}
+                onPick={(picked) => {
+                  setPatientId(picked.id);
+                  setSelectedPatient(picked);
+                }}
                 placeholder="Select a patient"
               />
             )}

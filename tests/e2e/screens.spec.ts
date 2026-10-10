@@ -275,3 +275,54 @@ for (const [role, screens] of Object.entries(SCREENS)) {
     });
   });
 }
+
+test.describe("patient records", () => {
+  test.skip(({ isMobile }) => isMobile, "Desktop layout");
+
+  test("add a patient, edit them, set them inactive and remove them", async ({ page }) => {
+    await page.goto("/patients");
+    await page.getByRole("button", { name: "Add patient" }).click();
+    const form = page.getByRole("dialog", { name: "Add patient" });
+    await form.getByLabel("First name").fill("Rina");
+    await form.getByLabel("Last name").fill("Uy");
+    await form.getByLabel("Diagnosis").fill("Speech sound disorder");
+    await form.getByLabel("Name", { exact: true }).fill("Lea Uy");
+    await form.getByLabel("Email").fill("not-an-email");
+    await form.getByRole("button", { name: "Add patient" }).click();
+    await expect(form.getByText("Enter a valid email address.")).toBeVisible();
+    await form.getByLabel("Email").fill("lea.uy@example.test");
+    await form.getByRole("button", { name: "Add patient" }).click();
+
+    await expect(page.getByText("Rina Uy added to patients")).toBeVisible();
+    const detail = page.getByRole("heading", { level: 2, name: "Rina Uy" });
+    await expect(detail).toBeVisible();
+
+    await page.getByRole("button", { name: "Patient actions" }).click();
+    await page.getByRole("menuitem", { name: "Edit details" }).click();
+    const edit = page.getByRole("dialog", { name: "Edit patient" });
+    await edit.getByLabel("Diagnosis").fill("Receptive language delay");
+    await edit.getByRole("button", { name: "Save patient" }).click();
+    await expect(page.getByText("Receptive language delay")).toBeVisible();
+
+    await page.getByRole("button", { name: "Patient actions" }).click();
+    await page.getByRole("menuitem", { name: "Set inactive" }).click();
+    await expect(page.getByText("Rina Uy set inactive")).toBeVisible();
+
+    // Inactive patients are not offered when booking.
+    await page.getByRole("link", { name: "Schedule" }).click();
+    await page.getByRole("button", { name: "New session" }).click();
+    await page.getByLabel("Patient").click();
+    await page.getByPlaceholder("Type a name").fill("Rina");
+    await expect(page.getByRole("option", { name: /^Add new patient/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /^Rina Uy/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+
+    await page.goto("/patients?q=Rina&status=all");
+    await page.getByRole("button", { name: "Patient actions" }).click();
+    await page.getByRole("menuitem", { name: "Remove patient" }).click();
+    await page.getByRole("button", { name: "Remove patient" }).click();
+    await expect(page.getByText("Rina Uy removed")).toBeVisible();
+    await expect(page.getByText("No patients match these filters")).toBeVisible();
+  });
+});

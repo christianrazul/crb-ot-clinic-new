@@ -26,6 +26,7 @@
     "db:studio": "node --env-file-if-exists=.env ./node_modules/drizzle-kit/bin.cjs studio"
   },
   "dependencies": {
+    "@hookform/resolvers": "5.9.1",
     "better-auth": "1.7.6",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -42,6 +43,7 @@
     "react": "19.3.0",
     "react-day-picker": "10.0.1",
     "react-dom": "19.3.0",
+    "react-hook-form": "7.89.0",
     "recharts": "3.8.0",
     "server-only": "0.0.1",
     "sonner": "2.0.8",

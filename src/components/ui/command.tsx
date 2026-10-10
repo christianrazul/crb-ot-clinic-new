@@ -24,14 +24,22 @@ function CommandDialog({
   children,
   title = "Search",
   description = "Search patients, pages and actions",
+  filter,
   ...props
-}: React.ComponentProps<typeof Dialog> & { title?: string; description?: string }) {
+}: React.ComponentProps<typeof Dialog> & {
+  title?: string;
+  description?: string;
+  filter?: React.ComponentProps<typeof CommandPrimitive>["filter"];
+}) {
   return (
     <Dialog {...props}>
       <DialogContent className="max-w-xl p-0" hideClose>
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
-        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2">
+        <Command
+          filter={filter}
+          className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2"
+        >
           {children}
         </Command>
       </DialogContent>

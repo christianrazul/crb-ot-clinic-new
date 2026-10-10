@@ -4,7 +4,11 @@ import { Trash2, UserPlus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
+import {
+  createPatientAction,
+  deletePatientAction,
+  setPatientStatusAction,
+} from "@/app/(app)/patients/actions";
 import { EmptyState } from "@/components/app/detail-bits";
 import { SectionHead } from "@/components/app/page-layout";
 import { PatientAvatar } from "@/components/app/patient-avatar";
@@ -29,22 +33,39 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { displayName } from "@/lib/demo/selectors";
 import { SERVICE_LABELS } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
 import { AddForm } from "./add-form";
 
 const SERVICES = ["ot", "speech", "sped"] as const;
 
-export function PatientsSection() {
-  const { state, dispatch, viewer } = useDemoStore();
+/** Quick add, active switch and remove. The full form lives on the patients page. */
+export function PatientsSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(true);
   const [name, setName] = React.useState("");
   const [service, setService] = React.useState<(typeof SERVICES)[number]>("ot");
-  const rows = state.patients
-    .filter((p) => !p.deletedAt && p.branchId === viewer.branchId)
-    .sort((a, b) => displayName(a).localeCompare(displayName(b)));
+  const [pending, startTransition] = React.useTransition();
+
+  const add = () => {
+    const trimmed = name.trim();
+    const [firstName = "", ...rest] = trimmed.split(/\s+/);
+    if (!trimmed) return;
+    startTransition(async () => {
+      const result = await createPatientAction({
+        firstName,
+        lastName: rest.join(" ") || "-",
+        service,
+        enrolledOn: new Date().toISOString().slice(0, 10),
+      });
+      if (!result.ok) return void toast.error(result.error);
+      setName("");
+      toast.success(`${trimmed} added to patients`, {
+        description: "Fill in their details from the patients page.",
+      });
+    });
+  };
 
   return (
     <>
@@ -58,18 +79,12 @@ export function PatientsSection() {
           </Button>
         )}
       </SectionHead>
-      <Card className="overflow-hidden">
+      <Card className={cn("overflow-hidden", pending && "opacity-70")}>
         <AddForm
           open={open}
           submitLabel="Add patient"
           onCancel={() => setOpen(false)}
-          onSubmit={() => {
-            const trimmed = name.trim();
-            if (!trimmed) return;
-            dispatch({ type: "patient/add", name: trimmed, service, branchId: viewer.branchId });
-            setName("");
-            toast.success(`${trimmed} added to patients`);
-          }}
+          onSubmit={add}
         >
           <div className="grid min-w-[200px] flex-1 gap-1.5">
             <Label htmlFor="pt-name">Full name</Label>
@@ -99,7 +114,7 @@ export function PatientsSection() {
             </Select>
           </div>
         </AddForm>
-        {rows.length ? (
+        {data.patients.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -112,8 +127,8 @@ export function PatientsSection() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((patient) => {
-                const patientName = displayName(patient);
+              {data.patients.map((patient) => {
+                const patientName = `${patient.firstName} ${patient.lastName}`;
                 const active = patient.status === "active";
                 return (
                   <TableRow key={patient.id}>
@@ -139,11 +154,14 @@ export function PatientsSection() {
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Switch
                           checked={active}
+                          disabled={pending}
                           onCheckedChange={(checked) =>
-                            dispatch({
-                              type: "patient/setStatus",
-                              id: patient.id,
-                              status: checked ? "active" : "inactive",
+                            startTransition(async () => {
+                              const result = await setPatientStatusAction(
+                                patient.id,
+                                checked ? "active" : "inactive",
+                              );
+                              if (!result.ok) toast.error(result.error);
                             })
                           }
                           aria-label={`${patientName} active`}
@@ -157,12 +175,17 @@ export function PatientsSection() {
                         size="icon-sm"
                         className="text-muted-foreground hover:bg-danger-soft hover:text-danger"
                         aria-label={`Remove ${patientName}`}
-                        onClick={() => {
-                          dispatch({ type: "patient/remove", id: patient.id });
-                          toast.success(`${patientName} removed`, {
-                            description: "Their sessions and payments stay on record.",
-                          });
-                        }}
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(async () => {
+                            const result = await deletePatientAction(patient.id);
+                            if (result.ok)
+                              toast.success(`${patientName} removed`, {
+                                description: "Their sessions and payments stay on record.",
+                              });
+                            else toast.error(result.error);
+                          })
+                        }
                       >
                         <Trash2 />
                       </Button>

@@ -42,6 +42,7 @@ export default defineConfig({
       BETTER_AUTH_SECRET: "e2e-only-secret-that-is-long-enough-1234",
       NEXT_PUBLIC_DEV_ROLE_SWITCHER: "false",
       E2E_TEST_MODE: "true",
+      DEMO_NOW: "2026-08-22T10:20:00+08:00",
       // The standalone server binds to $HOSTNAME, which Docker sets to the
       // container id. Bind to every interface so localhost reaches it in CI.
       HOSTNAME: "0.0.0.0",

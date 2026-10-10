@@ -28,6 +28,11 @@ export const envSchema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    /**
+     * Freezes the clinic clock, e.g. 2026-08-22T10:20:00+08:00, so the seeded
+     * demo week is "today". Development and tests only; production uses the real clock.
+     */
+    DEMO_NOW: z.iso.datetime({ offset: true }).optional(),
     /** Password for the seeded demo accounts (pnpm db:seed). */
     SEED_PASSWORD: z.string().min(12).optional(),
     /**
@@ -46,6 +51,13 @@ export const envSchema = z
         code: "custom",
         path: ["NEXT_PUBLIC_DEV_ROLE_SWITCHER"],
         message: "must be false in production; it signs in as demo accounts",
+      });
+    }
+    if (env.DEMO_NOW && !env.E2E_TEST_MODE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DEMO_NOW"],
+        message: "must not be set in production; it freezes the clock",
       });
     }
     if (!env.SMTP_URL && !env.E2E_TEST_MODE) {

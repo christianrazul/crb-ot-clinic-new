@@ -312,3 +312,50 @@ Playwright's global setup recreates a `crb_e2e` database and seeds it, so tests 
 ### D-052: Accounts are created by the owner, with no known password
 
 `createAccount()` creates the user, a credential account with a random password, branch memberships, and an optional link to a staff record, and writes an audit entry. The new user sets their own password through "Forgot password". The settings screen for this arrives in Milestone 6.
+
+## Milestone 5: patients and guardians
+
+### D-053: A clinic clock, pinned in development and tests
+
+Server code asks `clinicNow()` and `clinicToday()` (`src/server/clock.ts`) for the date, never `new Date()`. `DEMO_NOW` pins the clock to the seeded demo Saturday in `.env`, the database tests and the end-to-end suite. Production refuses `DEMO_NOW` (unless `E2E_TEST_MODE`) and uses the real clock.
+
+### D-054: Balances owed are computed, not stored
+
+What a patient owes is the sum of their attended sessions before today that have no payment (`owedByPatient`). Today's unpaid sessions count as "pending" at the desk, not owed. Attendance is attended out of attended plus no-show, computed the same way.
+
+To make those numbers real, the seed now records cash payments for every past attended session, except the ones that produce the mockup's balances: Enzo ₱1,400, Althea ₱3,500, Elle ₱700 and Kian ₱1,400. Historic receipts use their own `CRB-H` series, so they never collide with the gapless counter.
+
+### D-055: Pages read through loaders; mutations go through `runAction`
+
+App code may not import the database (lint rule). Pages call loaders in `src/server/loaders/`, which call services with the actor.
+
+Every Server Action goes through `runAction()` (`src/server/actions/run-action.ts`), which:
+
+- builds the actor from the session
+- runs the service in one transaction, so a change and its audit entry are written together or not at all
+- turns permission, validation and Postgres errors (overlaps, duplicates) into messages that say what to do
+- logs unknown errors by class and code only, never with patient data
+
+### D-056: The patients list is server-driven through the URL
+
+Search (`q`), service, status, sort, page, the selected patient and the tab live in the URL; the page renders on the server from them. Typing searches 300ms after the last keystroke.
+
+Name and age sorts run in SQL. Attendance and balance sorts are computed, so they load the branch's patients and sort in memory; a branch has hundreds of patients, not millions. Therapists can't sort by balance and never receive balances or credit.
+
+### D-057: One Zod schema for the patient form
+
+`src/lib/validation/patient.ts` validates in the browser (react-hook-form with `zodResolver`) and again in the service. It also rejects a primary therapist listed as a backup, and a date of birth after enrollment. Dates of birth use the native date field rather than the calendar popover, because scrolling a month calendar back eight years is slow at the desk.
+
+### D-058: Patient search for the palette and booking
+
+`searchPatients()` serves the command palette (all patients the actor may see) and the booking dialog (active only, so inactive patients disappear from booking). Both call it 200ms after typing stops. Therapists only find their own patients.
+
+The palette now matches every typed word as a substring, in any order, instead of cmdk's fuzzy matching, which ranked "Billing & payments" above "Liam Santos" for "liam".
+
+### D-059: Soft delete with a confirmation
+
+Removing a patient sets `deleted_at` after a confirmation that explains sessions, notes and payments stay on record, and offers "set inactive" as the gentler option. Deleted patients leave every list and search.
+
+### D-060 (temporary): Booking and billing still use the demo store
+
+Patients now live in the database, but booking, the schedule, billing and the dialogs that change them still run on the Milestone 2 demo store until Milestones 7 to 9. Seed patients exist in both, so those screens keep working. A patient created in the database can't be booked yet: the booking dialog finds them, but the demo store rejects the booking. This resolves in Milestone 7.

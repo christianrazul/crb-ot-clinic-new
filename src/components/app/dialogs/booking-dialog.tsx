@@ -32,8 +32,9 @@ import {
 import { bookableHours, eligibleStaff, hourLabel } from "@/lib/booking";
 import { formatManila } from "@/lib/dates";
 import { validateBooking } from "@/lib/demo/booking";
-import { byId, displayName, visiblePatients } from "@/lib/demo/selectors";
+import { byId, displayName } from "@/lib/demo/selectors";
 import { formatPeso } from "@/lib/money";
+import type { ServiceKey } from "@/lib/services";
 import { cn } from "@/lib/utils";
 
 import { useDialogs } from "./dialog-host";
@@ -75,10 +76,17 @@ export function BookingDialog({ open, onOpenChange, draft, rescheduleFromId }: B
     recurring: false,
     ...draft,
   });
-  const [query, setQuery] = React.useState(() => {
+  const [selectedPatient, setSelectedPatient] = React.useState<{
+    id: string;
+    name: string;
+    service: ServiceKey;
+  } | null>(() => {
     const patient = byId(state.patients, form.patientId);
-    return patient ? displayName(patient) : "";
+    return patient
+      ? { id: patient.id, name: displayName(patient), service: patient.service }
+      : null;
   });
+  const [query, setQuery] = React.useState(selectedPatient?.name ?? "");
   const [dateOpen, setDateOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -90,7 +98,6 @@ export function BookingDialog({ open, onOpenChange, draft, rescheduleFromId }: B
   const sessionTypes = state.sessionTypes.filter((t) => t.active);
   const type = byId(state.sessionTypes, form.sessionTypeId);
   const therapists = eligibleStaff(state.staff, type?.allowedRateClassIds ?? null);
-  const patients = visiblePatients(state, viewer.role, viewer.staffId, viewer.branchId);
   const isNew = form.patientId === NEW_PATIENT;
   const canSave = Boolean(form.staffId && (isNew ? query.trim() : form.patientId));
   const when = `${format(parseISO(form.date), "EEE, MMM d")}, ${hourLabel(form.hour)}`;
@@ -113,7 +120,7 @@ export function BookingDialog({ open, onOpenChange, draft, rescheduleFromId }: B
       return;
     }
     dispatch({ type: "appointment/book", input });
-    const name = isNew ? query.trim() : displayName(byId(state.patients, form.patientId)!);
+    const name = isNew ? query.trim() : (selectedPatient?.name ?? "the patient");
     onOpenChange(false);
     if (rescheduling) toast.success(`${name} moved`, { description: `Make up session on ${when}` });
     else
@@ -193,12 +200,13 @@ export function BookingDialog({ open, onOpenChange, draft, rescheduleFromId }: B
             <PatientCombobox
               id="book-patient"
               value={form.patientId}
+              selected={selectedPatient}
               query={query}
               onQueryChange={setQuery}
-              patients={patients}
-              onPick={(patientId) => {
-                update({ patientId });
-                setQuery(displayName(byId(state.patients, patientId)!));
+              onPick={(patient) => {
+                update({ patientId: patient.id });
+                setSelectedPatient(patient);
+                setQuery(patient.name);
               }}
               onNew={rescheduling ? undefined : () => update({ patientId: NEW_PATIENT })}
             />

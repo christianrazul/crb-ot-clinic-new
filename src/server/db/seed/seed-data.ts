@@ -1,6 +1,7 @@
 import "server-only";
 
 import { initialDemoState } from "@/lib/demo/state";
+import { DEMO_TODAY } from "@/lib/fixtures/demo-clock";
 import { USERS } from "@/lib/fixtures/users";
 import { toManilaIsoDate, manilaHour, manilaWeekday } from "@/lib/dates";
 
@@ -12,6 +13,50 @@ export const SEED_USERS = [
 ];
 
 const USER_BY_NAME = Object.fromEntries(SEED_USERS.map((u) => [u.name, u.id]));
+
+/**
+ * Past sessions left unpaid, newest first per patient, so the outstanding
+ * balances match the mockup (Enzo ₱1,400, Althea ₱3,500, Elle ₱700, Kian ₱1,400).
+ */
+const UNPAID_PAST_SESSIONS: Record<string, number> = { pat_03: 2, pat_05: 5, pat_11: 1, pat_16: 2 };
+
+/** Every other past attended session was paid in cash at the desk. */
+function historicPayments(
+  appointments: ReturnType<typeof initialDemoState>["appointments"],
+  alreadyPaid: Set<string>,
+  today: string,
+  receivedByUserId: string,
+) {
+  const unpaid = new Set<string>();
+  const remaining = { ...UNPAID_PAST_SESSIONS };
+  const past = appointments
+    .filter((a) => a.status === "attended" && toManilaIsoDate(new Date(a.startsAt)) < today)
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+  for (const a of past) {
+    if ((remaining[a.patientId] ?? 0) > 0) {
+      unpaid.add(a.id);
+      remaining[a.patientId]! -= 1;
+    }
+  }
+  return past
+    .filter((a) => !unpaid.has(a.id) && !alreadyPaid.has(a.id))
+    .reverse()
+    .map((a, index) => ({
+      id: `pay_hist_${String(index + 1).padStart(4, "0")}`,
+      appointmentId: a.id,
+      patientId: a.patientId,
+      branchId: a.branchId,
+      amountCentavos: a.feeCentavos,
+      creditAppliedCentavos: 0,
+      method: "cash" as const,
+      referenceNo: null,
+      cashReceivedCentavos: a.feeCentavos,
+      // Historic receipts use their own series so they never collide with the counter.
+      receiptNo: `CRB-H${String(index + 1).padStart(4, "0")}`,
+      receivedByUserId,
+      createdAt: new Date(a.endsAt),
+    }));
+}
 
 /**
  * Turns the Milestone 2 fixtures into database rows. The fixtures stay the
@@ -159,11 +204,19 @@ export function buildSeedRows() {
       };
     }),
     sessionNotes: state.notes.map((n) => ({ ...n, createdAt: new Date(n.createdAt) })),
-    payments: state.payments.map((p) => ({
-      ...p,
-      branchId: "br_bangkal",
-      createdAt: new Date(p.createdAt),
-    })),
+    payments: [
+      ...state.payments.map((p) => ({
+        ...p,
+        branchId: "br_bangkal",
+        createdAt: new Date(p.createdAt),
+      })),
+      ...historicPayments(
+        state.appointments,
+        new Set(state.payments.map((p) => p.appointmentId)),
+        DEMO_TODAY,
+        deskUserId,
+      ),
+    ],
     creditLedger: state.creditLedger.map((c) => ({
       ...c,
       createdByUserId: deskUserId,

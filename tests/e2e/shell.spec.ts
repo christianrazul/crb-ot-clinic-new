@@ -139,6 +139,8 @@ test.describe("desktop shell", () => {
     ]);
 
     await page.keyboard.type("Liam");
+    // Results come from the server; wait for them as a person would.
+    await expect(palette.getByRole("option", { name: /Liam Santos/ })).toBeVisible();
     await page.keyboard.press("Enter");
     // Links carry the patient id, never the name.
     await expect(page).toHaveURL(/\/patients\?patient=pat_01$/);

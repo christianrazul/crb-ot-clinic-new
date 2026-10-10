@@ -12,12 +12,13 @@ import {
   Phone,
   Plus,
   Receipt,
+  Trash2,
   UserRound,
+  UserX,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { EmptyState, Field } from "@/components/app/detail-bits";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { PatientAvatar } from "@/components/app/patient-avatar";
@@ -28,9 +29,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
@@ -45,50 +55,56 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { withRunningBalance } from "@/lib/credit";
 import { formatManila } from "@/lib/dates";
-import { byId, creditBalanceOf, displayName, patientAge } from "@/lib/demo/selectors";
-import type { DemoPatient } from "@/lib/demo/state";
-import { DEMO_NOW } from "@/lib/fixtures/demo-clock";
 import { formatPeso } from "@/lib/money";
 import { SERVICE_LABELS } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { PatientDetailData } from "@/server/loaders/patients-page";
+
+import { deletePatientAction, setPatientStatusAction } from "../actions";
+import { PatientFormDialog, type StaffOption } from "./patient-form-dialog";
 
 export type PatientTab = "overview" | "sessions" | "credit";
 
 const HISTORY_PAGE_SIZE = 6;
 const OT_SESSION_CENTAVOS = 70_000;
 
-const formatIsoDate = (isoDate: string) =>
+const formatIsoDate = (isoDate: string | null) =>
   isoDate ? formatManila(new Date(`${isoDate}T04:00:00Z`), "date") : "Not recorded";
 
-/** Not built until the patient form lands in Milestone 5. */
-const notYet = (what: string) =>
-  toast.info(`${what} is not built yet`, {
-    description: "It arrives with the patient form in Milestone 5.",
-  });
+const GENDER: Record<string, string> = {
+  male: "Male",
+  female: "Female",
+  unspecified: "Not specified",
+};
 
 export function PatientDetail({
-  patient,
+  detail,
   tab,
   onTabChange,
+  canWrite,
+  canSeeMoney,
+  staffOptions,
 }: {
-  patient: DemoPatient;
+  detail: PatientDetailData;
   tab: PatientTab;
   onTabChange: (tab: PatientTab) => void;
+  canWrite: boolean;
+  canSeeMoney: boolean;
+  staffOptions: StaffOption[];
 }) {
-  const { state, viewer } = useDemoStore();
   const { openDialog } = useDialogs();
   const [historyPage, setHistoryPage] = React.useState(0);
-  const isTherapist = viewer.role === "therapist";
-  const name = displayName(patient);
-  const balance = creditBalanceOf(state, patient.id);
-  const primary = byId(state.staff, patient.primaryStaffId);
-  const backup = byId(state.staff, patient.backupStaffId);
-  const branch = byId(state.branches, patient.branchId);
+  const [editing, setEditing] = React.useState(false);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
+  const [pending, startTransition] = React.useTransition();
+  const { patient, guardians } = detail;
+  const guardian = guardians[0];
+  const name = `${patient.firstName} ${patient.lastName}`;
+  const active = patient.status === "active";
 
-  const history = state.appointments
-    .filter((a) => a.patientId === patient.id && new Date(a.startsAt) <= DEMO_NOW)
-    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+  const history = detail.history;
   const attended = history.filter((a) => a.status === "attended").length;
+  const counted = history.filter((a) => a.status === "attended" || a.status === "no_show").length;
   const historyPages = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
   const page = Math.min(historyPage, historyPages - 1);
   const historyRows = history.slice(
@@ -96,62 +112,99 @@ export function PatientDetail({
     page * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE,
   );
 
-  const ledger = withRunningBalance(
-    state.creditLedger.filter((e) => e.patientId === patient.id),
-  ).reverse();
+  const balance = detail.credit?.balance ?? 0;
+  const ledger = detail.credit
+    ? withRunningBalance(
+        detail.credit.entries.map((e) => ({
+          ...e,
+          createdAt: new Date(e.createdAt).toISOString(),
+        })),
+      ).reverse()
+    : [];
   const sessionsLeft = Math.floor(balance / OT_SESSION_CENTAVOS);
 
+  const toggleActive = () =>
+    startTransition(async () => {
+      const result = await setPatientStatusAction(patient.id, active ? "inactive" : "active");
+      if (result.ok)
+        toast.success(`${name} set ${active ? "inactive" : "active"}`, {
+          description: active
+            ? "They can't be booked until set active again."
+            : "They can be booked again.",
+        });
+      else toast.error(result.error);
+    });
+
+  const remove = () =>
+    startTransition(async () => {
+      const result = await deletePatientAction(patient.id);
+      setConfirmRemove(false);
+      if (result.ok)
+        toast.success(`${name} removed`, {
+          description: "Their sessions and payments stay on record.",
+        });
+      else toast.error(result.error);
+    });
+
   return (
-    <Card className="overflow-hidden xl:sticky xl:top-4">
+    <Card className={cn("overflow-hidden xl:sticky xl:top-4", pending && "opacity-70")}>
       <div className="flex items-start gap-3.5 p-5">
         <PatientAvatar name={name} service={patient.service} className="size-12 text-sm" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg leading-tight font-semibold tracking-tight">{name}</h2>
           <p className="text-[13px] text-muted-foreground">
-            {patient.dateOfBirth ? `${patientAge(patient)} years old` : "Age not recorded"}
+            {detail.age === null ? "Age not recorded" : `${detail.age} years old`}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <Badge variant={patient.status === "active" ? "success" : "muted"}>
-              {patient.status === "active" ? "Active" : "Inactive"}
-            </Badge>
+            <Badge variant={active ? "success" : "muted"}>{active ? "Active" : "Inactive"}</Badge>
             <Badge variant="outline">
               <SvcDot service={patient.service} />
               {SERVICE_LABELS[patient.service]}
             </Badge>
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="-mr-1 text-muted-foreground"
-              aria-label="Patient actions"
-            >
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onSelect={() => notYet("Editing patient details")}>
-              <Pencil /> Edit details
-            </DropdownMenuItem>
-            {!isTherapist && (
+        {canWrite && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="-mr-1 text-muted-foreground"
+                aria-label="Patient actions"
+              >
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onSelect={() => setEditing(true)}>
+                <Pencil /> Edit details
+              </DropdownMenuItem>
               <DropdownMenuItem
-                disabled={patient.status !== "active"}
+                disabled={!active}
                 onSelect={() => openDialog({ kind: "booking", draft: { patientId: patient.id } })}
               >
                 <CalendarPlus /> Book a session
               </DropdownMenuItem>
-            )}
-            {!isTherapist && (
-              <DropdownMenuItem
-                onSelect={() => openDialog({ kind: "advance", patientId: patient.id })}
-              >
-                <HandCoins /> Record advance
+              {canSeeMoney && (
+                <DropdownMenuItem
+                  onSelect={() => openDialog({ kind: "advance", patientId: patient.id })}
+                >
+                  <HandCoins /> Record advance
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={toggleActive}>
+                <UserX /> {active ? "Set inactive" : "Set active"}
               </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem
+                onSelect={() => setConfirmRemove(true)}
+                className="text-danger focus:text-danger"
+              >
+                <Trash2 /> Remove patient
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <Tabs value={tab} onValueChange={(next) => onTabChange(next as PatientTab)}>
@@ -163,7 +216,7 @@ export function PatientDetail({
             <TabsTrigger value="sessions" className="flex-1">
               Sessions
             </TabsTrigger>
-            {!isTherapist && (
+            {canSeeMoney && (
               <TabsTrigger value="credit" className="flex-1">
                 Credit
                 {balance > 0 && (
@@ -187,19 +240,17 @@ export function PatientDetail({
                 <Field label="Date of birth">
                   <span className="tabular-nums">{formatIsoDate(patient.dateOfBirth)}</span>
                 </Field>
-                <Field label="Gender">
-                  {patient.dateOfBirth ? capitalize(patient.gender) : "Not specified"}
-                </Field>
+                <Field label="Gender">{GENDER[patient.gender]}</Field>
                 <Field label="Enrolled">
                   <span className="tabular-nums">{formatIsoDate(patient.enrolledOn)}</span>
                 </Field>
-                <Field label="Branch">{branch?.name.replace(/^CRB\s+/, "")}</Field>
+                <Field label="Recurring slot">{patient.recurringSlot}</Field>
               </dl>
             </section>
             <Separator />
             <section>
               <h3 className="mb-2.5 text-sm font-semibold">Guardian</h3>
-              {patient.guardian.name ? (
+              {guardian?.name ? (
                 <>
                   <div className="flex items-center gap-3">
                     <Avatar className="size-9" aria-hidden>
@@ -208,21 +259,23 @@ export function PatientDetail({
                       </AvatarFallback>
                     </Avatar>
                     <div className="grid leading-tight">
-                      <span className="text-sm font-medium">{patient.guardian.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {patient.guardian.relationship}
-                      </span>
+                      <span className="text-sm font-medium">{guardian.name}</span>
+                      <span className="text-xs text-muted-foreground">{guardian.relationship}</span>
                     </div>
                   </div>
                   <div className="mt-3 grid gap-1.5 text-sm">
-                    <span className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="size-3.5" aria-label="Phone" />
-                      <span className="text-foreground tabular-nums">{patient.guardian.phone}</span>
-                    </span>
-                    <span className="flex items-center gap-2 text-muted-foreground">
-                      <Mail className="size-3.5" aria-label="Email" />
-                      <span className="truncate text-foreground">{patient.guardian.email}</span>
-                    </span>
+                    {guardian.phone && (
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="size-3.5" aria-label="Phone" />
+                        <span className="text-foreground tabular-nums">{guardian.phone}</span>
+                      </span>
+                    )}
+                    {guardian.email && (
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="size-3.5" aria-label="Email" />
+                        <span className="truncate text-foreground">{guardian.email}</span>
+                      </span>
+                    )}
                   </div>
                 </>
               ) : (
@@ -233,7 +286,9 @@ export function PatientDetail({
             <section className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border p-3">
                 <div className="text-xs text-muted-foreground">Primary therapist</div>
-                <div className="mt-1 text-sm font-medium">{primary?.shortName ?? "Unassigned"}</div>
+                <div className="mt-1 text-sm font-medium">
+                  {detail.primaryStaffName ?? "Unassigned"}
+                </div>
                 <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="size-3" />
                   {patient.recurringSlot}
@@ -242,14 +297,16 @@ export function PatientDetail({
               <div className="rounded-lg border p-3">
                 <div className="text-xs text-muted-foreground">Backup</div>
                 <div className="mt-1 text-sm font-medium">
-                  {backup?.shortName ?? "None assigned"}
+                  {detail.backupStaffNames.length
+                    ? detail.backupStaffNames.join(", ")
+                    : "None assigned"}
                 </div>
-                {!isTherapist && (
+                {canWrite && !detail.backupStaffNames.length && (
                   <Button
                     variant="link"
                     size="sm"
                     className="mt-0.5 h-auto p-0 text-xs"
-                    onClick={() => notYet("Assigning a backup therapist")}
+                    onClick={() => setEditing(true)}
                   >
                     <Plus className="size-3!" />
                     Add backup
@@ -260,7 +317,7 @@ export function PatientDetail({
             <section>
               <h3 className="mb-2 text-sm font-semibold">Goals and notes</h3>
               <p className="rounded-lg bg-muted/60 p-3 text-sm leading-relaxed text-muted-foreground">
-                {patient.goalsNotes}
+                {patient.goalsNotes || "No goals recorded yet."}
               </p>
             </section>
           </div>
@@ -278,7 +335,7 @@ export function PatientDetail({
             </span>
             <span>
               <span className="font-semibold tabular-nums">
-                {history.length ? `${Math.round((attended / history.length) * 100)}%` : "–"}
+                {counted ? `${Math.round((attended / counted) * 100)}%` : "–"}
               </span>{" "}
               <span className="text-muted-foreground">rate</span>
             </span>
@@ -305,14 +362,14 @@ export function PatientDetail({
                         openDialog({ kind: "history", appointmentId: appointment.id })
                       }
                     >
-                      <TableCell className="whitespace-nowrap tabular-nums">
+                      <TableCell className="whitespace-nowrap">
                         {formatManila(new Date(appointment.startsAt), "date")}
                       </TableCell>
                       <TableCell>
                         <div className="grid leading-tight">
-                          <span>{byId(state.sessionTypes, appointment.sessionTypeId)?.name}</span>
+                          <span>{appointment.sessionTypeName}</span>
                           <span className="text-xs text-muted-foreground">
-                            {byId(state.staff, appointment.staffId)?.shortName}
+                            {appointment.staffName}
                           </span>
                         </div>
                       </TableCell>
@@ -359,7 +416,7 @@ export function PatientDetail({
           )}
         </TabsContent>
 
-        {!isTherapist && (
+        {canSeeMoney && (
           <TabsContent value="credit" className="pt-4">
             <div className="mx-5 flex items-center gap-4 rounded-lg border bg-accent/50 p-4">
               <div>
@@ -438,8 +495,34 @@ export function PatientDetail({
           </TabsContent>
         )}
       </Tabs>
+
+      {editing && (
+        <PatientFormDialog
+          open={editing}
+          onOpenChange={setEditing}
+          staffOptions={staffOptions}
+          existing={detail}
+        />
+      )}
+      <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove {name}?</DialogTitle>
+            <DialogDescription>
+              They leave the patient list and can no longer be booked. Their sessions, notes and
+              payments stay on record. To pause them instead, set them inactive.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRemove(false)}>
+              Keep patient
+            </Button>
+            <Button variant="destructive" onClick={remove} disabled={pending}>
+              Remove patient
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
-
-const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);

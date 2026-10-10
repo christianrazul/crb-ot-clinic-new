@@ -15,6 +15,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Page, PageHeader } from "@/components/app/page-layout";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
 import { BranchesSection } from "./branches-section";
 import { HoursSection } from "./hours-section";
@@ -23,7 +24,12 @@ import { RatesSection } from "./rates-section";
 import { SessionTypesSection } from "./session-types-section";
 import { StaffSection } from "./staff-section";
 
-const SECTIONS: { key: string; label: string; icon: LucideIcon; Body: () => React.ReactNode }[] = [
+const SECTIONS: {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  Body: (props: { data: SettingsPageData }) => React.ReactNode;
+}[] = [
   { key: "rates", label: "Rates and splits", icon: Percent, Body: RatesSection },
   { key: "sessions", label: "Session types", icon: Layers, Body: SessionTypesSection },
   { key: "staff", label: "Staff", icon: Users, Body: StaffSection },
@@ -32,7 +38,7 @@ const SECTIONS: { key: string; label: string; icon: LucideIcon; Body: () => Reac
   { key: "hours", label: "Operating hours", icon: Clock3, Body: HoursSection },
 ];
 
-export function SettingsScreen() {
+export function SettingsScreen({ data }: { data: SettingsPageData }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -68,7 +74,7 @@ export function SettingsScreen() {
           })}
         </nav>
         <div className="min-w-0 flex-1 lg:max-w-4xl">
-          <active.Body />
+          <active.Body data={data} />
         </div>
       </div>
     </Page>
