@@ -1,0 +1,48 @@
+# Project rules on top of the registry packs used in CI (.gitlab-ci.yml).
+rules:
+  - id: no-dangerously-set-inner-html
+    languages: [typescript]
+    severity: ERROR
+    message: Don't render raw HTML. React escapes text; use that instead.
+    pattern: <$EL dangerouslySetInnerHTML={...} />
+    paths:
+      include: [src/]
+
+  - id: no-sql-raw-with-variables
+    languages: [typescript]
+    severity: ERROR
+    message: sql.raw() skips parameterization. Only pass a constant string literal.
+    patterns:
+      - pattern: sql.raw($X)
+      - pattern-not: sql.raw("...")
+      - pattern-not: sql.raw(`'${CLINIC_TIME_ZONE}'`)
+    paths:
+      include: [src/]
+
+  - id: no-unsafe-sql-template
+    languages: [typescript]
+    severity: ERROR
+    message: Build queries with Drizzle or the sql`` tag, never by concatenating strings.
+    pattern-either:
+      - pattern: $DB.execute("..." + $X)
+      - pattern: $DB.unsafe($X)
+    paths:
+      include: [src/]
+      exclude: [src/server/db/migrate.ts]
+
+  - id: no-console-log-in-server
+    languages: [typescript]
+    severity: WARNING
+    message: Server logs must not carry patient data. Log ids and error codes only, and use console.error for failures.
+    pattern: console.log(...)
+    paths:
+      include: [src/server/, src/app/]
+      exclude: [src/server/db/seed/, src/server/db/migrate.ts, src/server/jobs/materialize-cli.ts]
+
+  - id: no-eval
+    languages: [typescript]
+    severity: ERROR
+    message: No eval or Function constructors; the CSP forbids them in production too.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)

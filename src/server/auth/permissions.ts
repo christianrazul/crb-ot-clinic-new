@@ -13,6 +13,8 @@ export type Action =
   | "appointment:status"
   | "patient:read"
   | "patient:write"
+  | "patient:export"
+  | "patient:anonymize"
   | "note:read"
   | "note:write"
   | "billing:read"
@@ -32,6 +34,8 @@ const GRANTS: Record<Action, Role[]> = {
   "appointment:status": ["superadmin", "secretary"],
   "patient:read": ["superadmin", "secretary", "therapist"],
   "patient:write": ["superadmin", "secretary"],
+  "patient:export": ["superadmin"],
+  "patient:anonymize": ["superadmin"],
   "note:read": ["superadmin", "secretary", "therapist"],
   "note:write": ["therapist"],
   "billing:read": ["superadmin", "secretary"],

@@ -37,6 +37,7 @@ const TABLES = [
 /** Empties every table. Row triggers do not fire on TRUNCATE, so append-only tables clear too. */
 export async function truncateAll(db: Database) {
   await db.execute(
+    // nosemgrep: no-sql-raw-with-variables -- a constant list of table names, not input.
     sql.raw(`TRUNCATE ${TABLES.map((name) => `"${name}"`).join(", ")} RESTART IDENTITY CASCADE`),
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
+import { headers } from "next/headers";
 
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -25,12 +26,14 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // Set per request by src/proxy.ts, for the theme script under the strict CSP.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     // next-themes sets data-theme before React hydrates, so the attribute differs from the server.
     <html lang="en" className={figtree.variable} suppressHydrationWarning>
       <body>
-        <ThemeProvider>
+        <ThemeProvider nonce={nonce}>
           {children}
           <Toaster />
         </ThemeProvider>

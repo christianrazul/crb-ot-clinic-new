@@ -85,6 +85,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  // nosemgrep: no-dangerously-set-inner-html -- CSS variables from the chart config in code, never user input.
   return (
     <style
       dangerouslySetInnerHTML={{

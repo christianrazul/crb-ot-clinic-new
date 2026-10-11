@@ -24,7 +24,8 @@
     "db:migrate": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/db/migrate.ts",
     "db:seed": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/db/seed/index.ts",
     "db:studio": "node --env-file-if-exists=.env ./node_modules/drizzle-kit/bin.cjs studio",
-    "jobs:materialize": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/jobs/materialize-cli.ts"
+    "jobs:materialize": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/jobs/materialize-cli.ts",
+    "test:load": "node scripts/load-test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",
@@ -36,7 +37,7 @@
     "date-fns-tz": "3.2.0",
     "drizzle-orm": "0.45.3",
     "lucide-react": "1.48.0",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "next-themes": "0.4.6",
     "nodemailer": "10.0.10",
     "postgres": "3.4.9",
@@ -53,6 +54,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.19.0",
@@ -61,7 +63,7 @@
     "@types/react-dom": "19.3.0",
     "drizzle-kit": "0.31.11",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "16.3.8",
     "eslint-config-prettier": "10.1.8",
     "husky": "9.1.7",
     "lint-staged": "17.5.1",

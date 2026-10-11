@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { anonymizePatient } from "@/server/services/patient-privacy";
 import { runAction } from "@/server/actions/run-action";
 import {
   createPatient,
@@ -56,4 +57,11 @@ export async function searchPatientsAction(input: unknown) {
   return runAction(({ db, actor }) => searchPatients(db, actor, { branchId, ...parsed }), {
     transaction: false,
   });
+}
+
+/** Erases a patient's identifying details. Owner only; the service checks the typed confirmation. */
+export async function anonymizePatientAction(input: unknown) {
+  const result = await runAction(({ db, actor }) => anonymizePatient(db, actor, input));
+  if (result.ok) revalidatePath("/", "layout");
+  return result;
 }

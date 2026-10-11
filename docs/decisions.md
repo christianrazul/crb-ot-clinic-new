@@ -532,3 +532,53 @@ Expenses are recorded by the owner (`expense:manage`) from a "Record expense" bu
 ### D-060 (final): The demo store is gone
 
 Every screen now reads the database. The in-memory store, its reducer and selectors are deleted. The shell's `viewer` (role and branch, for choosing what to show) comes from the server session through `ViewerProvider`. The Milestone 2 fixtures in `src/lib/fixtures` and `src/lib/demo/state.ts` remain only as the seed's source data.
+
+## Milestone 12: Hardening
+
+### D-089: Content Security Policy with a per-request nonce
+
+`src/proxy.ts` makes a fresh nonce for every request and sends `script-src 'self' 'nonce-…' 'strict-dynamic'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`, and `upgrade-insecure-requests` when the app URL is https. Next.js puts the nonce on its own scripts; the root layout reads it from `x-nonce` and hands it to next-themes for its inline theme script. `'unsafe-eval'` is added only in `next dev`. Styles allow `'unsafe-inline'` because Radix and Recharts position elements with `style=""` attributes; injected styles cannot run code, so scripts stay strict. Every page is already dynamic (sessions), so nonces cost nothing extra. The proxy now runs on every route and does the optimistic cookie check only for non-public paths.
+
+### D-090: Other security headers
+
+`next.config.ts` adds HSTS (two years, includeSubDomains, preload), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` (for old browsers; CSP covers new ones), `Cross-Origin-Opener-Policy: same-origin` and a Permissions-Policy that turns off camera, microphone, geolocation, payment and USB. `X-Powered-By` is off. An e2e test checks them on the production build.
+
+### D-091: Raw Better Auth credential endpoints are off
+
+`POST /api/auth/sign-in/email`, `/request-password-reset` and `/reset-password` would let a script skip our rate limiting, the 5-strikes lockout and the inactive-account check, which live in the Server Actions. They are in Better Auth's `disabledPaths` (404); the server-side `auth.api` calls our actions make are not affected. The emailed reset link's GET callback still works. The e2e setup now signs in through the login form.
+
+### D-092: Rate limits
+
+Database-backed fixed windows (`rate_limits`): sign-in 10 per 15 minutes per IP and email, plus lockout after 5 wrong passwords (D-044); password reset requests 3 per 5 minutes; patient data exports 30 per hour per user. Better Auth's own limiter covers its remaining endpoints at 100 per minute.
+
+### D-093: Error boundaries
+
+`app/(app)/error.tsx` keeps the shell and shows "This screen didn't load" with Try again (`retry`, stable in 16.3) and the error digest to quote. `global-error.tsx` covers a broken root layout with plain markup. `not-found.tsx` is a friendly 404. Production errors reach the browser only as a digest; the message stays in the server log.
+
+### D-094: Audit log viewer
+
+Settings → Audit log (owner only, `audit:read`) lists entries newest first, 50 at a time with keyset paging, filterable by record type, with before/after expandable. It is read-only; the table is append-only in Postgres.
+
+### D-095: Patient data export and anonymization (Data Privacy Act)
+
+The owner can download everything held about a patient as JSON (`GET /api/patients/:id/export`: profile, guardians, sessions, all note versions, payments, credit) for a data subject access request. Each export is audited.
+
+Anonymize (owner only, typing the patient's full name to confirm, refused while sessions are still booked) erases the name, birth date, diagnosis, goals and guardian contacts, sets the patient inactive and removed, and stamps `anonymized_at`. Sessions, notes, payments and credit stay, because clinical and financial records must be kept and are never deleted; they now point at an anonymous record. Session note text is kept as written (it is append-only clinical documentation); therapists are asked not to put full names in notes.
+
+Old audit entries for the patient and their guardians held the erased details, so migration 0002 replaces the audit log's append-only trigger with `audit_log_guard()`: still no deletes and no edits, except that inside a transaction that sets `crb.audit_redaction = 'on'`, `before`/`after` may be replaced with `{"redacted": true}` and nothing else may change. Only `anonymizePatient` sets that switch, and it turns it off again in the same transaction. DB tests check that every other update and delete is still refused.
+
+### D-096: Accessibility checks
+
+`tests/e2e/a11y.spec.ts` runs axe (WCAG 2.1 A and AA) on every screen for every role, in light and dark, plus the login page. Fixing what it found: small primary-on-tint text (avatar initials, credit chips) now uses the accent pair, deltas and the "owes" label use the strong success and danger tones, and schedule blocks no longer fade their second line with opacity. The colors stay within the mockup's palette.
+
+### D-097: Load test
+
+`pnpm test:load -- --state tests/e2e/.auth/secretary.json` (scripts/load-test.mjs, no dependencies) runs N signed-in users against the busiest screens and fails if p95 goes over 800 ms or any request fails. On a laptop against the production build: 20 users, 158 requests a second, p95 134–188 ms per screen, no errors. That is far above the clinic's real load (a few desks and therapists).
+
+### D-098: Security scanning in CI
+
+A `security` stage runs `pnpm audit --prod --audit-level=high` and Semgrep 1.177.0 (registry packs `p/typescript`, `p/nodejs`, `p/secrets` plus `.semgrep.yml`: no `dangerouslySetInnerHTML`, no `sql.raw` with variables, no string-built queries, no `console.log` on the server, no `eval`). Two reviewed exceptions carry `nosemgrep` comments with the reason.
+
+### D-099: Next.js 16.3.8 ahead of the two-week rule
+
+`pnpm audit` flagged a high-severity SSRF in image optimization and several cache-poisoning advisories in Next.js below 16.3.8. 16.3.8 is a patch release on the same minor, 11 days old when adopted. A known, fixed vulnerability outweighs the fresh-release rule here; `eslint-config-next` moved with it. One moderate advisory remains (esbuild inside drizzle-kit's loader, a dev-only path), below the CI threshold.

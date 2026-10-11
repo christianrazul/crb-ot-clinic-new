@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { runAction } from "@/server/actions/run-action";
 import { requestPasswordReset } from "@/server/auth/password-reset";
+import { auditEntities, listAuditLog } from "@/server/services/audit";
 import {
   createBranch,
   createSessionType,
@@ -84,5 +85,15 @@ export async function saveHoursAction(values: unknown) {
   const branchId = await currentBranchId();
   return done(
     await runAction(({ db, actor }) => updateBranchHours(db, actor, { branchId, values })),
+  );
+}
+
+export async function listAuditLogAction(query: unknown) {
+  return runAction(
+    async ({ db, actor }) => ({
+      page: await listAuditLog(db, actor, query),
+      entities: await auditEntities(db, actor),
+    }),
+    { transaction: false },
   );
 }

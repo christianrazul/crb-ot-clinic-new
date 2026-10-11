@@ -41,7 +41,7 @@ export function StatStrip({ items }: { items: Stat[] }) {
               <span
                 className={cn(
                   "inline-flex items-center gap-0.5 font-medium",
-                  stat.good ? "text-success" : "text-danger",
+                  stat.good ? "text-success-strong" : "text-danger-strong",
                 )}
               >
                 {stat.up ? (

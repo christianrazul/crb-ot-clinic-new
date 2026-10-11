@@ -153,7 +153,7 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
                         {appointment.patientName}
                       </span>
                       <span className="flex w-full items-center gap-1.5">
-                        <span className="text-xs opacity-80">{appointment.sessionTypeName}</span>
+                        <span className="text-xs">{appointment.sessionTypeName}</span>
                         {appointment.status !== "scheduled" && (
                           <StatusBadge
                             status={appointment.status}

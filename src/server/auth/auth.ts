@@ -56,6 +56,11 @@ export const auth = betterAuth({
     expiresIn: SESSION_DAYS * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,
   },
+  // Sign-in and password reset go through our Server Actions, which add rate
+  // limiting, lockout and the inactive-account check (sign-in.ts,
+  // password-reset.ts). Their raw HTTP endpoints would skip all that, so they
+  // are switched off; the server-side auth.api calls still work.
+  disabledPaths: ["/sign-in/email", "/request-password-reset", "/reset-password"],
   rateLimit: {
     enabled: true,
     storage: "database",

@@ -413,3 +413,20 @@ test.describe("owner dashboard", () => {
     await expect(dialog).toBeHidden();
   });
 });
+
+test.describe("patient data export", () => {
+  test("the owner downloads one patient's data as JSON", async ({ request }) => {
+    const response = await request.get("/api/patients/pat_01/export");
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-disposition"]).toContain("patient-pat_01-export.json");
+    const body = await response.json();
+    expect(body.patient.id).toBe("pat_01");
+  });
+
+  test.describe("for the front desk", () => {
+    test.use({ storageState: storageFor("secretary") });
+    test("the export is refused", async ({ request }) => {
+      expect((await request.get("/api/patients/pat_01/export")).status()).toBe(403);
+    });
+  });
+});

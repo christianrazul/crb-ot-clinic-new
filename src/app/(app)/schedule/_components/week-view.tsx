@@ -65,7 +65,7 @@ export function WeekView({
                 <span
                   className={cn(
                     "text-xs",
-                    day.today ? "font-medium text-primary" : "text-muted-foreground",
+                    day.today ? "font-medium text-accent-foreground" : "text-muted-foreground",
                   )}
                 >
                   {format(parseISO(day.date), "EEE")}

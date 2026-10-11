@@ -309,7 +309,7 @@ function UserMenu({
           )}
         >
           <Avatar className="size-8 rounded-lg">
-            <AvatarFallback className="rounded-lg bg-primary/15 text-primary">
+            <AvatarFallback className="rounded-lg bg-accent text-accent-foreground">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -332,7 +332,7 @@ function UserMenu({
       >
         <DropdownMenuLabel className="flex items-center gap-2.5 py-2 text-foreground">
           <Avatar className="size-8 rounded-lg">
-            <AvatarFallback className="rounded-lg bg-primary/15 text-primary">
+            <AvatarFallback className="rounded-lg bg-accent text-accent-foreground">
               {initials}
             </AvatarFallback>
           </Avatar>

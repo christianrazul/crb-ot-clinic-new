@@ -193,7 +193,7 @@ export function PatientsScreen({
                           <span className="text-xs text-muted-foreground">
                             {patient.age === null ? "Age not recorded" : `${patient.age} yrs`}
                             {patient.owedCentavos > 0 && (
-                              <span className="text-danger">
+                              <span className="text-danger-strong">
                                 , owes {formatPeso(patient.owedCentavos)}
                               </span>
                             )}

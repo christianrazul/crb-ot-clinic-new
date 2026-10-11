@@ -1,5 +1,18 @@
 import type { NextConfig } from "next";
 
+/** Sent on every response. The CSP is set per request in src/proxy.ts (it needs a nonce). */
+const SECURITY_HEADERS = [
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "same-origin" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  {
+    key: "Permissions-Policy",
+    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+  },
+];
+
 const nextConfig: NextConfig = {
   // Standalone output keeps the production Docker image small (Milestone 13).
   output: "standalone",
@@ -9,6 +22,9 @@ const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   typedRoutes: true,
   poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
 };
 
 export default nextConfig;

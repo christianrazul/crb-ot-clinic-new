@@ -3,6 +3,8 @@
 import {
   CalendarPlus,
   ChevronLeft,
+  Download,
+  EyeOff,
   ChevronRight,
   Clock,
   HandCoins,
@@ -22,6 +24,7 @@ import { toast } from "sonner";
 import { EmptyState, Field } from "@/components/app/detail-bits";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { PatientAvatar } from "@/components/app/patient-avatar";
+import { useViewer } from "@/components/app/shell/viewer-context";
 import { StatusBadge } from "@/components/app/status-badge";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -30,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -43,6 +47,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -60,7 +66,7 @@ import { SERVICE_LABELS } from "@/lib/services";
 import { cn } from "@/lib/utils";
 import type { PatientDetailData } from "@/server/loaders/patients-page";
 
-import { deletePatientAction, setPatientStatusAction } from "../actions";
+import { anonymizePatientAction, deletePatientAction, setPatientStatusAction } from "../actions";
 import { PatientFormDialog, type StaffOption } from "./patient-form-dialog";
 
 export type PatientTab = "overview" | "sessions" | "credit";
@@ -96,6 +102,10 @@ export function PatientDetail({
   const [historyPage, setHistoryPage] = React.useState(0);
   const [editing, setEditing] = React.useState(false);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
+  const [confirmAnonymize, setConfirmAnonymize] = React.useState(false);
+  const [typedName, setTypedName] = React.useState("");
+  const [anonymizeError, setAnonymizeError] = React.useState<string | null>(null);
+  const isOwner = useViewer().role === "superadmin";
   const [pending, startTransition] = React.useTransition();
   const { patient, guardians } = detail;
   const guardian = guardians[0];
@@ -133,6 +143,20 @@ export function PatientDetail({
             : "They can be booked again.",
         });
       else toast.error(result.error);
+    });
+
+  const anonymize = () =>
+    startTransition(async () => {
+      setAnonymizeError(null);
+      const result = await anonymizePatientAction({
+        patientId: patient.id,
+        confirmName: typedName,
+      });
+      if (!result.ok) return setAnonymizeError(result.error);
+      setConfirmAnonymize(false);
+      toast.success("Patient anonymized", {
+        description: "Their details are erased. Sessions, notes and payments stay on record.",
+      });
     });
 
   const remove = () =>
@@ -216,6 +240,26 @@ export function PatientDetail({
               >
                 <Trash2 /> Remove patient
               </DropdownMenuItem>
+              {isOwner && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <a href={`/api/patients/${patient.id}/export`} download>
+                      <Download /> Export data
+                    </a>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setTypedName("");
+                      setAnonymizeError(null);
+                      setConfirmAnonymize(true);
+                    }}
+                    className="text-danger focus:text-danger"
+                  >
+                    <EyeOff /> Anonymize
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -234,7 +278,7 @@ export function PatientDetail({
               <TabsTrigger value="credit" className="flex-1">
                 Credit
                 {balance > 0 && (
-                  <span className="ml-1 rounded bg-primary/15 px-1 text-[11px] font-semibold text-primary tabular-nums">
+                  <span className="ml-1 rounded bg-accent px-1 text-[11px] font-semibold text-accent-foreground tabular-nums">
                     {formatPeso(balance)}
                   </span>
                 )}
@@ -538,6 +582,45 @@ export function PatientDetail({
             </Button>
             <Button variant="destructive" onClick={remove} disabled={pending}>
               Remove patient
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmAnonymize} onOpenChange={setConfirmAnonymize}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Anonymize {name}?</DialogTitle>
+            <DialogDescription>
+              This permanently erases their name, birth date, diagnosis, goals and guardian
+              contacts, and removes them from the patient list. Sessions, notes and payments stay on
+              record without their details. Export their data first if they asked for a copy. This
+              can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="grid gap-1.5">
+            <Label htmlFor="anonymize-confirm">Type {name} to confirm</Label>
+            <Input
+              id="anonymize-confirm"
+              autoComplete="off"
+              value={typedName}
+              onChange={(e) => setTypedName(e.target.value)}
+            />
+            {anonymizeError && (
+              <p role="alert" className="text-sm text-danger-strong">
+                {anonymizeError}
+              </p>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAnonymize(false)}>
+              Keep details
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={anonymize}
+              disabled={pending || typedName.trim().toLowerCase() !== name.toLowerCase()}
+            >
+              Anonymize patient
             </Button>
           </DialogFooter>
         </DialogContent>

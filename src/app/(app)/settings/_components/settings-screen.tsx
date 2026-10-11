@@ -6,6 +6,7 @@ import {
   Layers,
   type LucideIcon,
   Percent,
+  ScrollText,
   UserRound,
   Users,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
 
+import { AuditSection } from "./audit-section";
 import { BranchesSection } from "./branches-section";
 import { HoursSection } from "./hours-section";
 import { PatientsSection } from "./patients-section";
@@ -36,6 +38,7 @@ const SECTIONS: {
   { key: "patients", label: "Patients", icon: UserRound, Body: PatientsSection },
   { key: "branches", label: "Branches", icon: Building2, Body: BranchesSection },
   { key: "hours", label: "Operating hours", icon: Clock3, Body: HoursSection },
+  { key: "audit", label: "Audit log", icon: ScrollText, Body: AuditSection },
 ];
 
 export function SettingsScreen({ data }: { data: SettingsPageData }) {

@@ -24,6 +24,7 @@ cache:
 
 stages:
   - check
+  - security
   - build
   - e2e
 
@@ -58,6 +59,24 @@ unit-tests:
     TEST_DATABASE_URL: postgres://crb:crb@postgres:5432/crb_test
   script:
     - pnpm test
+
+# Known vulnerabilities in production dependencies. High or critical fails the pipeline.
+dependency-audit:
+  stage: security
+  needs: []
+  script:
+    - pnpm audit --prod --audit-level=high
+
+# Static analysis: registry packs plus the project rules in .semgrep.yml.
+sast:
+  stage: security
+  needs: []
+  image: semgrep/semgrep:1.177.0
+  before_script: []
+  cache: []
+  script:
+    - semgrep scan --config .semgrep.yml --config p/typescript --config p/nodejs --config p/secrets
+      --metrics=off --error src
 
 build:
   stage: build

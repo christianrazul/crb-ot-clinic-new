@@ -51,6 +51,16 @@ test.describe("signed out", () => {
     });
     expect(response.ok()).toBe(false);
   });
+
+  test("Better Auth's raw sign-in and reset endpoints are closed", async ({ request }) => {
+    // They would skip the lockout and inactive-account checks in the login form.
+    for (const path of ["sign-in/email", "request-password-reset", "reset-password"]) {
+      const response = await request.post(`/api/auth/${path}`, {
+        data: { email: "camelia@crbclinic.test", password: "whatever-password", token: "x" },
+      });
+      expect(response.status(), path).toBe(404);
+    }
+  });
 });
 
 test.describe("logging out", () => {

@@ -15,6 +15,13 @@
       "when": 1791663694742,
       "tag": "0001_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791682140722,
+      "tag": "0002_audit_redaction",
+      "breakpoints": true
     }
   ]
 }
