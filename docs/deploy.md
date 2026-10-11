@@ -17,23 +17,13 @@ Production: **https://crbotclinic.com** on the VPS at **103.167.150.117**.
 
 ## 1. Prepare the server (once)
 
-Any VPS with 2 GB of RAM and Ubuntu 24.04 LTS is plenty. As root:
+`deploy/setup-server.sh` does it all and is safe to re-run: updates and automatic security updates, Docker from Docker's apt repository, the firewall (SSH, 80, 443), 2 GB of swap, fail2ban, the `deploy` user with the CI key, and `/srv/crb-ot-clinic`. As root on the server:
 
 ```bash
-apt update && apt upgrade -y
-apt install -y ca-certificates curl ufw unattended-upgrades
-curl -fsSL https://get.docker.com | sh
-
-# Firewall: SSH and web only.
-ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw enable
-
-# A deploy user that can run Docker, with no password login.
-adduser --disabled-password --gecos "" deploy
-usermod -aG docker deploy
-mkdir -p /srv/crb-ot-clinic && chown deploy:deploy /srv/crb-ot-clinic
+DEPLOY_PUBKEY="ssh-ed25519 AAAA... github-actions deploy crbotclinic.com" bash setup-server.sh
+# Once your own key login works, turn off SSH passwords:
+HARDEN_SSH=1 DEPLOY_PUBKEY="..." bash setup-server.sh
 ```
-
-Add the CI deploy key (see step 3) to `/home/deploy/.ssh/authorized_keys`, and set `PasswordAuthentication no` in `/etc/ssh/sshd_config`.
 
 At your domain registrar, add an **A record** for `crbotclinic.com` (host `@`) pointing to `103.167.150.117`, and remove any parking-page records for `@`. Do this before the first start so Caddy can get a certificate; check with `dig +short crbotclinic.com`.
 
