@@ -3,55 +3,57 @@
 import { format, parseISO } from "date-fns";
 import { Plus } from "lucide-react";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
-import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { EmptyState } from "@/components/app/detail-bits";
+import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { StatusBadge } from "@/components/app/status-badge";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
-import { bookableHours, hourGutterLabel, hourLabel } from "@/lib/booking";
-import { formatManila, manilaHour } from "@/lib/dates";
-import { appointmentService, appointmentsOn, byId, displayName } from "@/lib/demo/selectors";
-import type { AppointmentFixture } from "@/lib/fixtures/appointments";
-import { DEMO_NOW, DEMO_TODAY } from "@/lib/fixtures/demo-clock";
+import { hourGutterLabel, hourLabel } from "@/lib/booking";
+import { formatManila } from "@/lib/dates";
 import { initialsOf } from "@/lib/initials";
 import { SERVICE_BLOCK, SERVICE_SOFT } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { getDaySchedule, ScheduleAppointment } from "@/server/services/scheduling";
 
 const ROW_HEIGHT = 72;
 const HOLDS_SLOT = new Set(["scheduled", "checked_in", "attended", "no_show"]);
 
-/** One column per staff member, one row per bookable hour. */
-export function DayView({ date }: { date: string }) {
-  const { state, viewer } = useDemoStore();
-  const { openDialog } = useDialogs();
-  const branch = byId(state.branches, viewer.branchId)!;
-  const hours = bookableHours(branch.opensAtHour, branch.closesAtHour);
-  const isTherapist = viewer.role === "therapist";
-  const columns = state.staff.filter((s) => s.active && (!isTherapist || s.id === viewer.staffId));
-  const appointments = appointmentsOn(state, date, viewer.branchId);
-  const closed = !branch.openDays.includes(parseISO(date).getDay());
+type Day = Awaited<ReturnType<typeof getDaySchedule>>;
 
-  if (closed) {
+/** One column per staff member, one row per bookable hour. */
+export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; isToday: boolean }) {
+  const { openDialog } = useDialogs();
+
+  if (!day.open) {
     return (
       <Card>
         <EmptyState
-          title={`${branch.name} is closed on ${format(parseISO(date), "EEEE")}s`}
+          title={`The clinic is closed on ${format(parseISO(day.date), "EEEE")}s`}
           description="Pick another day, or change operating hours in settings."
         />
       </Card>
     );
   }
-
-  const nowMinutes = (DEMO_NOW.getTime() - new Date(`${date}T00:00:00+08:00`).getTime()) / 60_000;
-  const nowTop = ((nowMinutes - branch.opensAtHour * 60) / 60) * ROW_HEIGHT;
-  const showNow = date === DEMO_TODAY && nowTop >= 0 && nowTop <= hours.length * ROW_HEIGHT;
-
-  const cellFor = (staffId: string, hour: number): AppointmentFixture | undefined => {
-    const here = appointments.filter(
-      (a) => a.staffId === staffId && manilaHour(new Date(a.startsAt)) === hour,
+  if (!day.columns.length) {
+    return (
+      <Card>
+        <EmptyState
+          title="No active staff at this branch"
+          description="Add staff in settings to start booking."
+        />
+      </Card>
     );
+  }
+
+  const now = new Date(nowIso);
+  const midnight = new Date(`${day.date}T00:00:00+08:00`);
+  const nowTop =
+    (((now.getTime() - midnight.getTime()) / 60_000 - day.opensAtHour * 60) / 60) * ROW_HEIGHT;
+  const showNow = isToday && nowTop >= 0 && nowTop <= day.hours.length * ROW_HEIGHT;
+
+  const cellFor = (staffId: string, hour: number): ScheduleAppointment | undefined => {
+    const here = day.appointments.filter((a) => a.staffId === staffId && a.hour === hour);
     return here.find((a) => HOLDS_SLOT.has(a.status)) ?? here.at(-1);
   };
 
@@ -62,33 +64,29 @@ export function DayView({ date }: { date: string }) {
           className="min-w-[760px]"
           style={{
             display: "grid",
-            gridTemplateColumns: `68px repeat(${columns.length}, minmax(150px, 1fr))`,
+            gridTemplateColumns: `68px repeat(${day.columns.length}, minmax(150px, 1fr))`,
           }}
         >
           <div className="sticky left-0 z-10 border-r border-b bg-card" />
-          {columns.map((staff) => {
-            const rateClass = byId(state.rateClasses, staff.rateClassId);
-            const service = rateClass?.service ?? "none";
-            return (
-              <div
-                key={staff.id}
-                className="flex items-center gap-2.5 border-r border-b px-3 py-3 last:border-r-0"
-              >
-                <Avatar className="size-8">
-                  <AvatarFallback className={cn("text-[11px]", SERVICE_SOFT[service])}>
-                    {initialsOf(staff.displayName)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="grid min-w-0 leading-tight">
-                  <span className="truncate text-sm font-semibold">{staff.surname}</span>
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <SvcDot service={service} />
-                    {rateClass?.shortName}
-                  </span>
-                </div>
+          {day.columns.map((member) => (
+            <div
+              key={member.id}
+              className="flex items-center gap-2.5 border-r border-b px-3 py-3 last:border-r-0"
+            >
+              <Avatar className="size-8">
+                <AvatarFallback className={cn("text-[11px]", SERVICE_SOFT[member.service])}>
+                  {initialsOf(member.displayName)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid min-w-0 leading-tight">
+                <span className="truncate text-sm font-semibold">{member.surname}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <SvcDot service={member.service} />
+                  {member.rateClassShort}
+                </span>
               </div>
-            );
-          })}
+            </div>
+          ))}
 
           <div className="relative sticky left-0 z-10 border-r bg-card">
             {showNow && (
@@ -97,11 +95,11 @@ export function DayView({ date }: { date: string }) {
                 style={{ top: nowTop }}
               >
                 <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10.5px] font-semibold text-primary-foreground tabular-nums">
-                  {formatManila(DEMO_NOW, "time").replace(/ (AM|PM)$/, "")}
+                  {formatManila(now, "time").replace(/ (AM|PM)$/, "")}
                 </span>
               </div>
             )}
-            {hours.map((hour) => (
+            {day.hours.map((hour) => (
               <div key={hour} className="relative h-[72px] border-b last:border-b-0">
                 <span className="absolute top-2 right-2 text-xs text-muted-foreground tabular-nums">
                   {hourGutterLabel(hour)}
@@ -110,20 +108,20 @@ export function DayView({ date }: { date: string }) {
             ))}
           </div>
 
-          {columns.map((staff) => (
-            <div key={staff.id} className="relative border-r last:border-r-0">
-              {hours.map((hour) => {
-                const appointment = cellFor(staff.id, hour);
+          {day.columns.map((member) => (
+            <div key={member.id} className="relative border-r last:border-r-0">
+              {day.hours.map((hour) => {
+                const appointment = cellFor(member.id, hour);
                 if (!appointment) {
                   return (
                     <div key={hour} className="group h-[72px] border-b p-1 last:border-b-0">
-                      {!isTherapist && (
+                      {day.canBook && (
                         <button
-                          aria-label={`Book ${staff.surname} at ${hourLabel(hour)}`}
+                          aria-label={`Book ${member.surname} at ${hourLabel(hour)}`}
                           onClick={() =>
                             openDialog({
                               kind: "booking",
-                              draft: { staffId: staff.id, date, hour },
+                              draft: { staffId: member.id, date: day.date, hour },
                             })
                           }
                           className="flex size-full items-center justify-center gap-1 rounded-md border border-dashed border-transparent text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:border-border hover:bg-muted/50 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -134,8 +132,6 @@ export function DayView({ date }: { date: string }) {
                     </div>
                   );
                 }
-                const patient = byId(state.patients, appointment.patientId);
-                const type = byId(state.sessionTypes, appointment.sessionTypeId);
                 const struck =
                   appointment.status === "cancelled" || appointment.status === "rescheduled";
                 return (
@@ -144,7 +140,7 @@ export function DayView({ date }: { date: string }) {
                       onClick={() => openDialog({ kind: "session", appointmentId: appointment.id })}
                       className={cn(
                         "flex size-full flex-col items-start justify-between rounded-md border-l-[3px] px-2.5 py-1.5 text-left transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.98] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                        SERVICE_BLOCK[appointmentService(state, appointment)],
+                        SERVICE_BLOCK[appointment.service],
                         struck && "opacity-55",
                       )}
                     >
@@ -154,10 +150,10 @@ export function DayView({ date }: { date: string }) {
                           struck && "line-through",
                         )}
                       >
-                        {patient ? displayName(patient) : "Unknown patient"}
+                        {appointment.patientName}
                       </span>
                       <span className="flex w-full items-center gap-1.5">
-                        <span className="text-xs opacity-80">{type?.name}</span>
+                        <span className="text-xs opacity-80">{appointment.sessionTypeName}</span>
                         {appointment.status !== "scheduled" && (
                           <StatusBadge
                             status={appointment.status}

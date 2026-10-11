@@ -10,9 +10,10 @@ import { HistoryDialog } from "./history-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { SessionDialog } from "./session-dialog";
 import { SessionNoteDialog } from "./session-note-dialog";
+import type { AppointmentDetail } from "@/server/services/scheduling";
 
 export type DialogRequest =
-  | { kind: "booking"; draft?: Partial<BookingDraft>; rescheduleFromId?: string }
+  | { kind: "booking"; draft?: Partial<BookingDraft>; reschedule?: AppointmentDetail }
   | { kind: "session"; appointmentId: string }
   | { kind: "payment"; appointmentId: string }
   | { kind: "advance"; patientId?: string }
@@ -34,7 +35,7 @@ export function useDialogs(): DialogsApi {
  * between openings, and closing keeps the dialog mounted for its exit
  * animation.
  */
-export function DialogHost({ children }: { children: React.ReactNode }) {
+export function DialogHost({ children, today }: { children: React.ReactNode; today: string }) {
   const { viewer } = useDemoStore();
   const [request, setRequest] = React.useState<DialogRequest | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -62,14 +63,20 @@ export function DialogHost({ children }: { children: React.ReactNode }) {
           key={key}
           {...shared}
           draft={request.draft}
-          rescheduleFromId={request.rescheduleFromId}
+          original={request.reschedule}
+          defaultDate={request.draft?.date ?? today}
         />
       )}
       {request?.kind === "session" &&
         (viewer.role === "therapist" ? (
           <SessionNoteDialog key={key} {...shared} appointmentId={request.appointmentId} />
         ) : (
-          <SessionDialog key={key} {...shared} appointmentId={request.appointmentId} />
+          <SessionDialog
+            key={key}
+            {...shared}
+            appointmentId={request.appointmentId}
+            branchName={viewer.branchName}
+          />
         ))}
       {request?.kind === "payment" && viewer.role !== "therapist" && (
         <PaymentDialog key={key} {...shared} appointmentId={request.appointmentId} />

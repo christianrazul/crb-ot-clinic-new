@@ -1,41 +1,43 @@
 "use client";
 
-import { addDays, format, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
+import { EmptyState } from "@/components/app/detail-bits";
 import { Card } from "@/components/ui/card";
-import { bookableHours, hourGutterLabel } from "@/lib/booking";
-import { manilaHour } from "@/lib/dates";
-import { appointmentService, appointmentsOn, byId } from "@/lib/demo/selectors";
-import { DEMO_TODAY } from "@/lib/fixtures/demo-clock";
+import { hourGutterLabel } from "@/lib/booking";
 import { SERVICE_BG, SERVICE_BLOCK, type ServiceKey } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { getWeekSchedule } from "@/server/services/scheduling";
 
-const SHOWN = new Set(["scheduled", "checked_in", "attended", "no_show"]);
+type Week = Awaited<ReturnType<typeof getWeekSchedule>>;
 
-/** Monday to Saturday at a glance. Clicking a day or a session opens that day. */
+/** The open days of a week at a glance. Clicking a day or a session opens that day. */
 export function WeekView({
-  weekMonday,
+  week,
+  today,
   onOpenDay,
 }: {
-  weekMonday: string;
+  week: Week;
+  today: string;
   onOpenDay: (date: string) => void;
 }) {
-  const { state, viewer } = useDemoStore();
-  const branch = byId(state.branches, viewer.branchId)!;
-  const hours = bookableHours(branch.opensAtHour, branch.closesAtHour);
-  const isTherapist = viewer.role === "therapist";
-
-  const days = Array.from({ length: 6 }, (_, index) => {
-    const date = format(addDays(parseISO(weekMonday), index), "yyyy-MM-dd");
-    const sessions = appointmentsOn(state, date, viewer.branchId).filter(
-      (a) => SHOWN.has(a.status) && (!isTherapist || a.staffId === viewer.staffId),
+  if (!week.days.length) {
+    return (
+      <Card>
+        <EmptyState
+          title="The clinic is closed all week"
+          description="Change operating hours in settings."
+        />
+      </Card>
     );
+  }
+  const days = week.days.map((date) => {
+    const sessions = week.appointments.filter((a) => a.date === date);
     const perService = (["ot", "aide", "speech", "sped"] as ServiceKey[]).map((service) => ({
       service,
-      count: sessions.filter((a) => appointmentService(state, a) === service).length,
+      count: sessions.filter((a) => a.service === service).length,
     }));
-    return { date, sessions, perService, today: date === DEMO_TODAY };
+    return { date, sessions, perService, today: date === today };
   });
 
   return (
@@ -43,7 +45,10 @@ export function WeekView({
       <div className="overflow-x-auto">
         <div
           className="min-w-[860px]"
-          style={{ display: "grid", gridTemplateColumns: "68px repeat(6, minmax(0, 1fr))" }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: `68px repeat(${days.length}, minmax(0, 1fr))`,
+          }}
         >
           <div className="border-r border-b" />
           {days.map((day) => (
@@ -96,9 +101,8 @@ export function WeekView({
               </span>
             </button>
           ))}
-
           <div className="border-r">
-            {hours.map((hour) => (
+            {week.hours.map((hour) => (
               <div key={hour} className="relative h-[64px] border-b last:border-b-0">
                 <span className="absolute top-2 right-2 text-xs text-muted-foreground tabular-nums">
                   {hourGutterLabel(hour)}
@@ -111,39 +115,28 @@ export function WeekView({
               key={day.date}
               className={cn("border-r last:border-r-0", day.today && "bg-accent/25")}
             >
-              {hours.map((hour) => {
-                const list = day.sessions.filter((a) => manilaHour(new Date(a.startsAt)) === hour);
-                return (
-                  <div
-                    key={hour}
-                    className="flex h-[64px] flex-col gap-1 border-b p-1 last:border-b-0"
-                  >
-                    {list.map((appointment) => {
-                      const patient = byId(state.patients, appointment.patientId);
-                      const staff = byId(state.staff, appointment.staffId);
-                      const shortPatient = patient
-                        ? `${patient.firstName} ${patient.lastName[0]}.`
-                        : "";
-                      return (
-                        <button
-                          key={appointment.id}
-                          onClick={() => onOpenDay(day.date)}
-                          title={`${patient?.firstName} ${patient?.lastName} with ${staff?.surname}`}
-                          className={cn(
-                            "flex min-h-0 flex-1 items-center gap-1.5 rounded border-l-[3px] px-2 text-left text-xs transition-[filter] hover:brightness-[0.97] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                            SERVICE_BLOCK[appointmentService(state, appointment)],
-                          )}
-                        >
-                          <span className="truncate font-semibold">{shortPatient}</span>
-                          <span className="ml-auto hidden truncate opacity-70 xl:inline">
-                            {staff?.surname}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              {week.hours.map((hour) => (
+                <div
+                  key={hour}
+                  className="flex h-[64px] flex-col gap-1 border-b p-1 last:border-b-0"
+                >
+                  {day.sessions
+                    .filter((a) => a.hour === hour)
+                    .map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => onOpenDay(day.date)}
+                        title={a.patientName}
+                        className={cn(
+                          "flex min-h-0 flex-1 items-center gap-1.5 rounded border-l-[3px] px-2 text-left text-xs transition-[filter] hover:brightness-[0.97] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                          SERVICE_BLOCK[a.service],
+                        )}
+                      >
+                        <span className="truncate font-semibold">{a.patientShort}</span>
+                      </button>
+                    ))}
+                </div>
+              ))}
             </div>
           ))}
         </div>

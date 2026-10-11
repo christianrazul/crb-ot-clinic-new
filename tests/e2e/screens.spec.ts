@@ -349,13 +349,13 @@ test.describe("settings persist", () => {
     await expect(page.getByLabel("OT group session rate")).toHaveValue("400");
 
     await page.goto("/settings?tab=hours");
-    await page.getByRole("button", { name: "Sat", exact: true }).click();
+    // Sunday, which no other test books, so parallel tests are unaffected.
+    await page.getByRole("button", { name: "Sun", exact: true }).click();
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Operating hours saved")).toBeVisible();
     await page.reload();
-    await expect(page.getByText("Closed on Sat, Sun.")).toBeVisible();
-    // Put Saturday back for the other tests.
-    await page.getByRole("button", { name: "Sat", exact: true }).click();
+    await expect(page.getByText("Open every day.")).toBeVisible();
+    await page.getByRole("button", { name: "Sun", exact: true }).click();
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Operating hours saved")).toBeVisible();
   });

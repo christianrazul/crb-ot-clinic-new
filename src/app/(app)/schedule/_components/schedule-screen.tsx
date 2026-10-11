@@ -2,62 +2,68 @@
 
 import { addDays, format, parseISO, startOfWeek } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { Page } from "@/components/app/page-layout";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { byId } from "@/lib/demo/selectors";
-import { DEMO_TODAY } from "@/lib/fixtures/demo-clock";
 import { SERVICE_SHORT, type ServiceKey } from "@/lib/services";
+import { cn } from "@/lib/utils";
+import type { SchedulePageData } from "@/server/loaders/schedule-page";
 
 import { DayView } from "./day-view";
 import { WeekView } from "./week-view";
 
 const LEGEND: ServiceKey[] = ["ot", "aide", "speech", "sped"];
-
 const iso = (date: Date) => format(date, "yyyy-MM-dd");
+const mondayOf = (date: string) => iso(startOfWeek(parseISO(date), { weekStartsOn: 1 }));
 
-/** Step to the next or previous day the branch is open. */
-function stepOpenDay(date: string, direction: 1 | -1, openDays: number[]): string {
-  let next = parseISO(date);
-  for (let i = 0; i < 7; i++) {
-    next = addDays(next, direction);
-    if (openDays.includes(next.getDay())) break;
-  }
-  return iso(next);
-}
+export function ScheduleScreen({
+  data,
+  isTherapist,
+}: {
+  data: SchedulePageData;
+  isTherapist: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = React.useTransition();
+  const { view, date, today } = data;
 
-export function ScheduleScreen() {
-  const { state, viewer } = useDemoStore();
-  const branch = byId(state.branches, viewer.branchId)!;
-  const [view, setView] = React.useState<"day" | "week">("day");
-  const [date, setDate] = React.useState(DEMO_TODAY);
+  const go = (next: { view?: "day" | "week"; date?: string }) => {
+    const v = next.view ?? view;
+    const d = next.date ?? date;
+    startTransition(() =>
+      router.replace(`/schedule?view=${v}&date=${d}` as Route, { scroll: false }),
+    );
+  };
 
-  const weekMonday = iso(startOfWeek(parseISO(date), { weekStartsOn: 1 }));
-  const weekSaturday = addDays(parseISO(weekMonday), 5);
-  const isCurrent =
-    view === "day"
-      ? date === DEMO_TODAY
-      : weekMonday === iso(startOfWeek(parseISO(DEMO_TODAY), { weekStartsOn: 1 }));
+  // Step to the next or previous open day; closed days are skipped.
+  const step = (direction: 1 | -1) => {
+    if (view === "week") return go({ date: iso(addDays(parseISO(date), direction * 7)) });
+    let next = parseISO(date);
+    for (let i = 0; i < 7; i++) {
+      next = addDays(next, direction);
+      if (next.getDay() !== 0) break;
+    }
+    go({ date: iso(next) });
+  };
 
+  const isCurrent = view === "day" ? date === today : mondayOf(date) === mondayOf(today);
+  const monday = parseISO(mondayOf(date));
+  const saturday = addDays(monday, 5);
   const heading =
     view === "day"
       ? format(parseISO(date), "EEE, MMM d, yyyy")
-      : weekRangeLabel(parseISO(weekMonday), weekSaturday);
-
-  const step = (direction: 1 | -1) =>
-    setDate(
-      view === "day"
-        ? stepOpenDay(date, direction, branch.openDays)
-        : iso(addDays(parseISO(date), direction * 7)),
-    );
+      : monday.getMonth() === saturday.getMonth()
+        ? `${format(monday, "MMM d")} – ${format(saturday, "d, yyyy")}`
+        : `${format(monday, "MMM d")} – ${format(saturday, "MMM d, yyyy")}`;
 
   return (
     <Page className="gap-4">
-      <h1 className="sr-only">{viewer.role === "therapist" ? "My schedule" : "Schedule"}</h1>
+      <h1 className="sr-only">{isTherapist ? "My schedule" : "Schedule"}</h1>
       <div className="flex flex-wrap items-center gap-3">
         <ToggleGroup
           type="single"
@@ -65,7 +71,7 @@ export function ScheduleScreen() {
           size="sm"
           aria-label="Schedule view"
           value={view}
-          onValueChange={(next) => next && setView(next as "day" | "week")}
+          onValueChange={(next) => next && go({ view: next as "day" | "week" })}
         >
           <ToggleGroupItem value="day">Day</ToggleGroupItem>
           <ToggleGroupItem value="week">Week</ToggleGroupItem>
@@ -99,7 +105,7 @@ export function ScheduleScreen() {
             variant="ghost"
             size="sm"
             className="text-primary"
-            onClick={() => setDate(DEMO_TODAY)}
+            onClick={() => go({ date: today })}
           >
             {view === "day" ? "Today" : "This week"}
           </Button>
@@ -113,23 +119,16 @@ export function ScheduleScreen() {
           ))}
         </div>
       </div>
-      {view === "day" ? (
-        <DayView date={date} />
-      ) : (
-        <WeekView
-          weekMonday={weekMonday}
-          onOpenDay={(day) => {
-            setDate(day);
-            setView("day");
-          }}
-        />
-      )}
+      <div className={cn("transition-opacity", pending && "opacity-60")} aria-busy={pending}>
+        {data.day && <DayView day={data.day} nowIso={data.nowIso} isToday={date === today} />}
+        {data.week && (
+          <WeekView
+            week={data.week}
+            today={today}
+            onOpenDay={(d) => go({ view: "day", date: d })}
+          />
+        )}
+      </div>
     </Page>
   );
-}
-
-function weekRangeLabel(monday: Date, saturday: Date) {
-  return monday.getMonth() === saturday.getMonth()
-    ? `${format(monday, "MMM d")} – ${format(saturday, "d, yyyy")}`
-    : `${format(monday, "MMM d")} – ${format(saturday, "MMM d, yyyy")}`;
 }

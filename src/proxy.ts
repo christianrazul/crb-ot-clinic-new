@@ -13,8 +13,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except auth pages, Better Auth's API, health checks and static files.
+  // Everything except auth pages, Better Auth's API, health checks, token-protected jobs and static files.
   matcher: [
-    "/((?!login|forgot-password|reset-password|api/auth|api/health|_next/|favicon.ico|logo.png).*)",
+    "/((?!login|forgot-password|reset-password|api/auth|api/health|api/jobs|_next/|favicon.ico|logo.png).*)",
   ],
 };

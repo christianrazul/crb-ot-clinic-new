@@ -181,7 +181,16 @@ export function PatientDetail({
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!active}
-                onSelect={() => openDialog({ kind: "booking", draft: { patientId: patient.id } })}
+                onSelect={() =>
+                  openDialog({
+                    kind: "booking",
+                    draft: {
+                      patientId: patient.id,
+                      patientName: name,
+                      patientService: patient.service,
+                    },
+                  })
+                }
               >
                 <CalendarPlus /> Book a session
               </DropdownMenuItem>

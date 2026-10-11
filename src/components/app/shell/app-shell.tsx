@@ -19,6 +19,8 @@ type AppShellProps = {
   branches: BranchFixture[];
   sidebarCollapsed: boolean;
   showRoleSwitcher: boolean;
+  /** Clinic date (yyyy-MM-dd) from the server clock, for dialog defaults. */
+  today: string;
   children: React.ReactNode;
 };
 
@@ -32,13 +34,14 @@ export function AppShell({
   branches,
   sidebarCollapsed,
   showRoleSwitcher,
+  today,
   children,
 }: AppShellProps) {
   return (
     <ShellProvider defaultCollapsed={sidebarCollapsed}>
       <TooltipProvider delayDuration={200}>
         <DemoStoreProvider user={user} branch={branch}>
-          <DialogHost>
+          <DialogHost today={today}>
             <div className="flex h-dvh w-full overflow-hidden bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
               <AppSidebar
                 user={user}

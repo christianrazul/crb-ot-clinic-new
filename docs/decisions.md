@@ -395,3 +395,47 @@ A new branch gets the next code (`B3`), its own receipt prefix (`CRBT` for Toril
 ### D-067: Hours apply to new bookings only
 
 Changing opening days or hours never moves or cancels existing bookings. The booking rules (Milestone 7) read the branch's hours when a session is booked.
+
+## Milestone 7: scheduling
+
+### D-068: Booking rules in the service, overlaps backed by Postgres
+
+`bookAppointment()` (`src/server/services/scheduling.ts`) checks, in order, and stops at the first problem with a message that says what to do:
+
+- the session type is offered
+- the therapist is at this branch, active, and in an allowed rate class
+- the hour is within opening hours
+- the patient is active and at this branch
+- the date isn't in the past
+- every occurrence falls on an open day
+- no occurrence clashes with the therapist's or the patient's other sessions
+
+If two people book the same slot at the same moment, both pass the checks, and the exclusion constraint stops the second insert. `runAction` turns that into "That time is already taken".
+
+### D-069: Series and the daily job
+
+A recurring booking creates an `appointment_series` row (one weekday at one time) and its first 8 weeks of appointments. `materializeSeries()` extends every open series to 8 weeks past today. It skips series whose session type was removed or whose patient is inactive or removed. Slots already taken are skipped and counted, never double-booked. Running it twice in a day does nothing.
+
+It runs from `POST /api/jobs/materialize` with `Authorization: Bearer $CRON_SECRET` (compared in constant time; without `CRON_SECRET` set, the endpoint refuses everything), or from `pnpm jobs:materialize`. Cron setup is in Milestone 13.
+
+### D-070: "This and all future sessions"
+
+Cancelling that way sets the series' `ends_on` to the day before the chosen session, and cancels that session and every later scheduled or checked-in one in the series. Past sessions are untouched, and the job never brings cancelled ones back. "This session only" is a normal status change.
+
+### D-071: Rescheduling frees the old slot first
+
+A reschedule marks the original `rescheduled`, inserts the make-up session (`is_make_up`), then links the original to it (`rescheduled_to_id`). The original is released before the insert, so a make-up at the same hour with another therapist works. A database test caught the opposite order failing. Nothing is deleted, and a moved session can't have its status changed.
+
+### D-072: The schedule reads the database through the URL
+
+`/schedule?view=day|week&date=yyyy-mm-dd` renders on the server. Therapists get only their own column and sessions, can't book, and never receive fees.
+
+The booking and session dialogs load their data from Server Actions when they open. The booking date defaults to the next open day after today, as in the mockup; empty-slot clicks and walk-ins pass their own date.
+
+### D-073: Today reads the same appointments
+
+The check-in queue (sessions starting in the next two hours) and the "Collect payments" list on Today come from the same day schedule as the schedule screen, so a check-in shows on both at once.
+
+### D-060 (updated): What still runs on the demo store
+
+Billing, payments and advance credit (Milestone 9), the therapist's My day and notes (Milestone 8), payroll (Milestone 10) and the dashboard (Milestone 11) still use the demo store. The "Collect" button on Today opens the demo payment dialog until Milestone 9.

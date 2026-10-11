@@ -23,7 +23,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/db/migrate.ts",
     "db:seed": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/db/seed/index.ts",
-    "db:studio": "node --env-file-if-exists=.env ./node_modules/drizzle-kit/bin.cjs studio"
+    "db:studio": "node --env-file-if-exists=.env ./node_modules/drizzle-kit/bin.cjs studio",
+    "jobs:materialize": "node --env-file-if-exists=.env --conditions=react-server --import tsx src/server/jobs/materialize-cli.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",

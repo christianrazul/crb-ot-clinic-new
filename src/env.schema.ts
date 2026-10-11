@@ -33,6 +33,8 @@ export const envSchema = z
      * demo week is "today". Development and tests only; production uses the real clock.
      */
     DEMO_NOW: z.iso.datetime({ offset: true }).optional(),
+    /** Bearer token for scheduled jobs (POST /api/jobs/materialize). Generate: openssl rand -base64 32 */
+    CRON_SECRET: z.string().min(32, "must be at least 32 characters").optional(),
     /** Password for the seeded demo accounts (pnpm db:seed). */
     SEED_PASSWORD: z.string().min(12).optional(),
     /**
