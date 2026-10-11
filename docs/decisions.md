@@ -624,3 +624,7 @@ On `main`, once every check passes, `images` builds the runner and migrate targe
 ### D-109: GitHub Actions instead of GitLab CI
 
 The repository lives on GitHub, so the pipeline moved from `.gitlab-ci.yml` to `.github/workflows/` with the same jobs. Every third-party action is pinned to a full commit SHA (with its version in a comment), each release at least two weeks old, and workflows get read-only tokens except `images` (`packages: write`). Semgrep runs with `docker run` because GitHub's JavaScript actions cannot run inside its Alpine-based image. The deploy SSH key is an environment secret, available only to jobs that passed the approval.
+
+### D-110: Backups on the server until a bucket is set
+
+To go live before an off-site bucket exists, `RESTIC_REPOSITORY` is optional: unset, `backup` keeps its encrypted restic repository in `/srv/crb-ot-clinic/backups` (bind-mounted at `/backups`). Schedule, retention and checks are the same. It protects against mistakes, bad migrations and corrupted data, but not against losing the VPS, so an off-site repository (D-107) is still the target; switching is a matter of setting the variable and the S3 keys.

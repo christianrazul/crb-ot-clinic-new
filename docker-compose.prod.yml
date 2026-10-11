@@ -101,7 +101,8 @@ services:
     depends_on: [app]
     networks: [backend]
 
-  # Nightly encrypted pg_dump to an off-site restic repository.
+  # Nightly encrypted pg_dump into restic: to an off-site bucket when
+  # RESTIC_REPOSITORY is set, otherwise to ./backups on the server (D-110).
   backup:
     <<: *hardening
     build: ./deploy/backup
@@ -110,10 +111,12 @@ services:
       PGUSER: crb
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: crb
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?set RESTIC_REPOSITORY in .env}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/backups/restic}
       RESTIC_PASSWORD: ${RESTIC_PASSWORD:?set RESTIC_PASSWORD in .env}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./backups:/backups
     depends_on:
       db: { condition: service_healthy }
     # backend for the database, egress to reach the off-site repository.

@@ -2,14 +2,14 @@
 
 One VPS runs the whole stack with Docker Compose (`docker-compose.prod.yml`):
 
-| Service   | What it does                                                                  |
-| --------- | ----------------------------------------------------------------------------- |
-| `caddy`   | HTTPS on ports 80 and 443, automatic Let's Encrypt certificates, proxy to app |
-| `app`     | The Next.js server, as an unprivileged user on a read-only filesystem         |
-| `migrate` | One-off: applies database migrations, then exits. The app waits for it        |
-| `db`      | Postgres 16. Not published; only reachable inside the stack                   |
-| `jobs`    | Calls the daily scheduling job at 01:00 Manila time                           |
-| `backup`  | Encrypted `pg_dump` to an off-site restic repository at 02:00 Manila time     |
+| Service   | What it does                                                                      |
+| --------- | --------------------------------------------------------------------------------- |
+| `caddy`   | HTTPS on ports 80 and 443, automatic Let's Encrypt certificates, proxy to app     |
+| `app`     | The Next.js server, as an unprivileged user on a read-only filesystem             |
+| `migrate` | One-off: applies database migrations, then exits. The app waits for it            |
+| `db`      | Postgres 16. Not published; only reachable inside the stack                       |
+| `jobs`    | Calls the daily scheduling job at 01:00 Manila time                               |
+| `backup`  | Encrypted `pg_dump` into restic at 02:00 Manila time (on the server, or off-site) |
 
 Images are built by GitHub Actions on `main` and pushed to the GitHub Container Registry (`ghcr.io/christianrazul/crb-ot-clinic-new`). The deploy job waits for your approval, then copies the compose file and `deploy/` to the server and rolls the stack to that commit.
 
@@ -37,6 +37,7 @@ chmod 600 /srv/crb-ot-clinic/.env
 
 - Generate each secret with the command next to it. `POSTGRES_PASSWORD` and `CRON_SECRET` use hex so they are safe inside URLs.
 - `SMTP_URL` and `EMAIL_FROM` are required: password reset emails are how staff set their passwords.
+- `RESTIC_REPOSITORY` empty keeps backups in `/srv/crb-ot-clinic/backups` on the server. That covers mistakes and bad updates but not losing the server, so set an S3-compatible bucket (Backblaze B2's free 10 GB is plenty) with `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as soon as you can; the next start creates the repository there. Copy any snapshots you want to keep from the local one with `restic copy`.
 - `RESTIC_PASSWORD` encrypts the backups. Keep a copy somewhere other than this server (the owner's password manager); without it the backups cannot be read.
 - The `BOOTSTRAP_*` values create the owner's account on the very first start (step 4). Remove them afterwards.
 

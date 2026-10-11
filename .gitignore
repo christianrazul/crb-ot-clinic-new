@@ -37,3 +37,6 @@ tests/e2e/.auth/
 
 # CI workflows (overrides a global ignore of .github/*)
 !/.github/*
+
+# Local backup repository on the server (D-110)
+/backups/
