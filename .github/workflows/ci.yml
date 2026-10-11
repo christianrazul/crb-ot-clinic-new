@@ -5,9 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# Pull requests: a new push cancels the old run. main: every run proceeds on its
+# own, so one waiting for deploy approval never blocks the next (deploys are
+# serialized in deploy.yml instead).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
