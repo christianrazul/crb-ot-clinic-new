@@ -1,0 +1,22 @@
+# TLS certificates are issued and renewed automatically (Let's Encrypt).
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy app:3000 {
+		# The app reads the client IP for rate limiting and the audit log.
+		# Caddy replaces any X-Forwarded-For sent by the client.
+		header_up X-Real-IP {remote_host}
+	}
+
+	header -Server
+
+	# Access logs carry paths, which contain ids only, never names (see D-100).
+	log {
+		output stdout
+		format json
+	}
+}

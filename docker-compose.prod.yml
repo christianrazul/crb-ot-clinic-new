@@ -1,0 +1,133 @@
+# Production stack for one VPS. See docs/deploy.md.
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+# Images come from the GitLab registry (APP_IMAGE, APP_TAG); only Caddy's
+# ports are published. The database is reachable only inside the stack.
+name: crb-ot-clinic
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:16.15-alpine3.23
+    environment:
+      POSTGRES_USER: crb
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: crb
+      TZ: UTC
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crb -d crb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-off: applies migrations, then exits. The app waits for it to succeed.
+  migrate:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}/migrate:${APP_TAG:-latest}
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      DATABASE_URL: postgres://crb:${POSTGRES_PASSWORD}@db:5432/crb
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+
+  app:
+    <<: *hardening
+    image: ${APP_IMAGE}:${APP_TAG:-latest}
+    # Only what the app needs; backup and database credentials stay with their services.
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://crb:${POSTGRES_PASSWORD}@db:5432/crb
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      SMTP_URL: ${SMTP_URL:?set SMTP_URL in .env}
+      EMAIL_FROM: ${EMAIL_FROM:?set EMAIL_FROM in .env}
+      CRON_SECRET: ${CRON_SECRET}
+      # First start only; ignored once any account exists.
+      BOOTSTRAP_OWNER_EMAIL: ${BOOTSTRAP_OWNER_EMAIL:-}
+      BOOTSTRAP_OWNER_NAME: ${BOOTSTRAP_OWNER_NAME:-}
+      BOOTSTRAP_BRANCH_NAME: ${BOOTSTRAP_BRANCH_NAME:-}
+      BOOTSTRAP_BRANCH_LOCATION: ${BOOTSTRAP_BRANCH_LOCATION:-}
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop: [ALL]
+    networks: [backend, frontend]
+
+  caddy:
+    <<: *hardening
+    image: caddy:2.11.4-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    networks: [frontend]
+
+  # Calls the daily scheduling job (keeps recurring sessions 8 weeks ahead).
+  jobs:
+    <<: *hardening
+    image: alpine:3.23.6
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+    command:
+      - sh
+      - -c
+      - |
+        # 17:00 UTC is 01:00 in Manila.
+        printf '0 17 * * * wget -q -O- --header="Authorization: Bearer %s" --post-data="" http://app:3000/api/jobs/materialize\n' "$$CRON_SECRET" > /etc/crontabs/root
+        chmod 600 /etc/crontabs/root
+        exec crond -f -l 8
+    depends_on: [app]
+    networks: [backend]
+
+  # Nightly encrypted pg_dump to an off-site restic repository.
+  backup:
+    <<: *hardening
+    build: ./deploy/backup
+    environment:
+      PGHOST: db
+      PGUSER: crb
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: crb
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?set RESTIC_REPOSITORY in .env}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?set RESTIC_PASSWORD in .env}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+    depends_on:
+      db: { condition: service_healthy }
+    # backend for the database, egress to reach the off-site repository.
+    networks: [backend, egress]
+
+networks:
+  # Caddy and the app (the app sends email through it).
+  frontend:
+  # Database traffic only; no route to the internet.
+  backend:
+    internal: true
+  egress:
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

@@ -27,6 +27,8 @@ stages:
   - security
   - build
   - e2e
+  - release
+  - deploy
 
 workflow:
   rules:
@@ -126,3 +128,49 @@ e2e:
       - playwright-report/
       - test-results/
     expire_in: 7 days
+
+# Builds and pushes the app and migrate images on the default branch, tagged
+# with the commit SHA (and latest).
+images:
+  stage: release
+  image: docker:27.5.1
+  services: ["docker:27.5.1-dind"]
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  cache: []
+  script:
+    - docker build --target runner -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE:latest" .
+    - docker build --target migrate -t "$CI_REGISTRY_IMAGE/migrate:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE/migrate:latest" .
+    - docker push --all-tags "$CI_REGISTRY_IMAGE"
+    - docker push --all-tags "$CI_REGISTRY_IMAGE/migrate"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Manual: copies the stack definition to the VPS and rolls it to this commit.
+# Needs CI/CD variables DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY (file) and
+# DEPLOY_KNOWN_HOSTS, all protected. See docs/deploy.md.
+deploy:
+  stage: deploy
+  image: alpine:3.23.6
+  needs: [images]
+  environment:
+    name: production
+    url: https://$DEPLOY_DOMAIN
+  before_script:
+    - apk add --no-cache openssh-client
+    - install -m 600 "$DEPLOY_SSH_KEY" ~/.ssh_key
+    - mkdir -p ~/.ssh && echo "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+  cache: []
+  script:
+    - export SSH="ssh -i ~/.ssh_key $DEPLOY_USER@$DEPLOY_HOST"
+    - scp -i ~/.ssh_key -r docker-compose.prod.yml deploy "$DEPLOY_USER@$DEPLOY_HOST:/srv/crb-ot-clinic/"
+    - $SSH "cd /srv/crb-ot-clinic && sed -i 's/^APP_TAG=.*/APP_TAG=$CI_COMMIT_SHA/' .env
+      && docker compose -f docker-compose.prod.yml pull app migrate
+      && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+      && docker image prune -f"
+    - $SSH "curl -fsS https://\$(grep ^DOMAIN= /srv/crb-ot-clinic/.env | cut -d= -f2)/api/health"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual

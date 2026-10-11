@@ -39,11 +39,21 @@ export const auth = betterAuth({
     revokeSessionsOnPasswordReset: true,
     resetPasswordTokenExpiresIn: 60 * 60,
     sendResetPassword: async ({ user, url }) => {
-      await sendEmail({
-        to: user.email,
-        subject: "Reset your CRB OT Clinic password",
-        text: `Hi ${user.name},\n\nUse this link within the hour to choose a new password:\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
-      });
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: "Reset your CRB OT Clinic password",
+          text: `Hi ${user.name},\n\nUse this link within the hour to choose a new password:\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
+        });
+      } catch (error) {
+        // Better Auth hides failures from the caller (no account enumeration),
+        // so log them for the operator. Never log the link: it holds the token.
+        console.error(
+          `Password reset email to user ${user.id} failed:`,
+          error instanceof Error ? error.message : error,
+        );
+        throw error;
+      }
     },
   },
   user: {

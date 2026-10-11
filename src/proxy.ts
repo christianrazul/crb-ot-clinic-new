@@ -1,6 +1,8 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { type NextRequest, NextResponse } from "next/server";
 
+import { env } from "@/env";
+
 /** Pages and endpoints reachable without a session cookie. */
 const PUBLIC_PATHS =
   /^\/(login|forgot-password|reset-password|api\/auth|api\/health|api\/jobs)(\/|$)/;
@@ -40,8 +42,9 @@ export function proxy(request: NextRequest) {
 
   const nonce = btoa(crypto.randomUUID());
   const csp = contentSecurityPolicy(nonce, {
-    dev: process.env.NODE_ENV === "development",
-    https: (process.env.NEXT_PUBLIC_APP_URL ?? "").startsWith("https://"),
+    dev: env.NODE_ENV === "development",
+    // Read at runtime from the validated env, not inlined at build time.
+    https: env.NEXT_PUBLIC_APP_URL.startsWith("https://"),
   });
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);

@@ -42,20 +42,25 @@ pnpm exec playwright install chromium
 
 ## Scripts
 
-| Script              | What it does                                                          |
-| ------------------- | --------------------------------------------------------------------- |
-| `pnpm dev`          | Start the dev server on port 3000                                     |
-| `pnpm build`        | Production build (standalone output, static assets copied alongside)  |
-| `pnpm start`        | Run the production build, reading `.env` if present                   |
-| `pnpm lint`         | ESLint, zero warnings allowed                                         |
-| `pnpm typecheck`    | Generate route types and run `tsc --noEmit`                           |
-| `pnpm format`       | Format everything with Prettier                                       |
-| `pnpm format:check` | Check formatting without writing (used in CI)                         |
-| `pnpm test`         | Unit tests (Vitest)                                                   |
-| `pnpm test:watch`   | Unit tests in watch mode                                              |
-| `pnpm test:e2e`     | End-to-end tests (Playwright); builds and starts the app on port 3100 |
-| `pnpm db:up`        | Start the dev database and wait until it is healthy                   |
-| `pnpm db:down`      | Stop the dev database (data is kept)                                  |
+| Script                  | What it does                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `pnpm dev`              | Start the dev server on port 3000                                                            |
+| `pnpm build`            | Production build (standalone output, static assets copied alongside)                         |
+| `pnpm start`            | Run the production build, reading `.env` if present                                          |
+| `pnpm lint`             | ESLint, zero warnings allowed                                                                |
+| `pnpm typecheck`        | Generate route types and run `tsc --noEmit`                                                  |
+| `pnpm format`           | Format everything with Prettier                                                              |
+| `pnpm format:check`     | Check formatting without writing (used in CI)                                                |
+| `pnpm test`             | Unit and database tests (Vitest; needs `pnpm db:up`)                                         |
+| `pnpm test:watch`       | Unit tests in watch mode                                                                     |
+| `pnpm test:e2e`         | End-to-end and accessibility tests (Playwright, axe); builds and starts the app on port 3100 |
+| `pnpm test:load`        | Load test against a running build (see docs/decisions.md D-097)                              |
+| `pnpm db:up`            | Start the dev database and wait until it is healthy                                          |
+| `pnpm db:down`          | Stop the dev database (data is kept)                                                         |
+| `pnpm db:seed`          | Empty the database and load the demo data                                                    |
+| `pnpm db:migrate`       | Apply pending migrations                                                                     |
+| `pnpm db:generate`      | Generate a migration from schema changes                                                     |
+| `pnpm jobs:materialize` | Run the daily recurring-sessions job once                                                    |
 
 A pre-commit hook (Husky and lint-staged) lints and formats staged files.
 
@@ -63,16 +68,19 @@ A pre-commit hook (Husky and lint-staged) lints and formats staged files.
 
 Every variable is validated at boot by [src/env.schema.ts](src/env.schema.ts). If one is missing or malformed, the server prints which one and exits. Server code reads values from `env` in [src/env.ts](src/env.ts), never from `process.env` directly.
 
-| Variable                        | Example                                  | Purpose                                                                                       |
-| ------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | `postgres://crb:crb@localhost:5433/crb`  | Postgres connection string                                                                    |
-| `NEXT_PUBLIC_APP_URL`           | `http://localhost:3000`                  | Public URL of the app                                                                         |
-| `BETTER_AUTH_SECRET`            | `openssl rand -base64 32`                | Signs sessions and tokens (32+ characters)                                                    |
-| `SMTP_URL`                      | `smtps://user:pass@smtp.example.com:465` | Sends password reset emails. Required in production; unset in development logs emails instead |
-| `EMAIL_FROM`                    | `CRB OT Clinic <no-reply@example.com>`   | Sender for those emails                                                                       |
-| `SEED_PASSWORD`                 | `crb-demo-password`                      | Password for the seeded demo accounts                                                         |
-| `E2E_TEST_MODE`                 | `true`                                   | End-to-end suite only: allows logging emails in a production build. Never set on a server     |
-| `NEXT_PUBLIC_DEV_ROLE_SWITCHER` | `true`                                   | Shows the "Preview as" role switcher in the sidebar. Development only; defaults to `false`.   |
+| Variable                                  | Example                                  | Purpose                                                                                       |
+| ----------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                            | `postgres://crb:crb@localhost:5433/crb`  | Postgres connection string                                                                    |
+| `NEXT_PUBLIC_APP_URL`                     | `http://localhost:3000`                  | Public URL of the app                                                                         |
+| `BETTER_AUTH_SECRET`                      | `openssl rand -base64 32`                | Signs sessions and tokens (32+ characters)                                                    |
+| `SMTP_URL`                                | `smtps://user:pass@smtp.example.com:465` | Sends password reset emails. Required in production; unset in development logs emails instead |
+| `EMAIL_FROM`                              | `CRB OT Clinic <no-reply@example.com>`   | Sender for those emails                                                                       |
+| `SEED_PASSWORD`                           | `crb-demo-password`                      | Password for the seeded demo accounts                                                         |
+| `E2E_TEST_MODE`                           | `true`                                   | End-to-end suite only: allows logging emails in a production build. Never set on a server     |
+| `NEXT_PUBLIC_DEV_ROLE_SWITCHER`           | `true`                                   | Shows the "Preview as" role switcher in the sidebar. Development only; defaults to `false`.   |
+| `DEMO_NOW`                                | `2026-08-22T10:20:00+08:00`              | Freezes the clinic clock on the demo week. Development and tests only                         |
+| `CRON_SECRET`                             | `openssl rand -hex 32`                   | Bearer token for `POST /api/jobs/materialize`. Required in production                         |
+| `BOOTSTRAP_OWNER_*`, `BOOTSTRAP_BRANCH_*` | see `.env.example`                       | Production first start only: creates the owner and main branch (docs/deploy.md)               |
 
 ## Project layout
 
@@ -86,11 +94,14 @@ src/
   server/services/   business logic; every permission check lives here
   server/auth/       Better Auth setup
   lib/               shared helpers (money, dates, services) that are safe on client and server
-  lib/fixtures/      static demo data used until the database lands (Milestone 3)
+  server/loaders/    page data for Server Components (app code never imports the db)
+  lib/fixtures/      the demo data the seed loads
   env.ts             validated environment (server only)
 tests/
   unit/              Vitest
-  e2e/               Playwright
+  db/                Vitest against a real Postgres
+  e2e/               Playwright, including axe accessibility checks
+deploy/              Caddy and backup images for docker-compose.prod.yml
 ```
 
 Rules that keep this layout safe:
@@ -122,9 +133,18 @@ To change the schema, edit `src/server/db/schema/`, run `pnpm db:generate`, revi
 
 ## Demo data
 
-The app runs on typed fixtures in `src/lib/fixtures/`, frozen at Saturday, August 22, 2026, 10:20 AM Manila time: two branches, five staff, sixteen patients, five weeks of sessions, three credit ledgers and this morning's payments. All the data is at CRB Bangkal; switch to Panabo to see the empty states.
+`pnpm db:seed` loads the typed fixtures in `src/lib/fixtures/` into Postgres: two branches, five staff, sixteen patients, five weeks of sessions, notes, payments, credit ledgers and expenses. In development `DEMO_NOW` freezes the clinic clock at Saturday, August 22, 2026, 10:20 AM Manila time, so the demo week is "today". All the data is at CRB Bangkal; switch to Panabo to see the empty states. Everything you change is saved; run `pnpm db:seed` again to start over.
 
-Every screen reads and changes an in-memory demo store (`src/components/app/demo/demo-store.tsx`). Booking, check-in, payments, notes and settings all work, and **everything resets when you reload the page**. Use the "Preview as" switcher in the sidebar to see each role.
+## Security
+
+- Strict Content Security Policy with a fresh nonce per request (`src/proxy.ts`), HSTS, nosniff, `Referrer-Policy`, `frame-ancestors 'none'` (`next.config.ts`).
+- Every create, update and status change on patients, sessions, payments, credit and settings writes an audit entry; the owner reads them in Settings → Audit log.
+- The owner can export everything held about a patient and anonymize them (Data Privacy Act requests). Clinical and financial records are never deleted.
+- CI runs `pnpm audit` and Semgrep (`.semgrep.yml`) on every pipeline.
+
+## Deployment
+
+One VPS with Docker Compose, Caddy for HTTPS, nightly encrypted backups with restic. See [docs/deploy.md](docs/deploy.md).
 
 ## UI components
 

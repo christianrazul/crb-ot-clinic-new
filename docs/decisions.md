@@ -582,3 +582,41 @@ A `security` stage runs `pnpm audit --prod --audit-level=high` and Semgrep 1.177
 ### D-099: Next.js 16.3.8 ahead of the two-week rule
 
 `pnpm audit` flagged a high-severity SSRF in image optimization and several cache-poisoning advisories in Next.js below 16.3.8. 16.3.8 is a patch release on the same minor, 11 days old when adopted. A known, fixed vulnerability outweighs the fresh-release rule here; `eslint-config-next` moved with it. One moderate advisory remains (esbuild inside drizzle-kit's loader, a dev-only path), below the CI threshold.
+
+## Milestone 13: Deployment
+
+### D-100: One VPS, Docker Compose, Caddy
+
+The clinic's load fits one small VPS (D-097). `docker-compose.prod.yml` runs Caddy (automatic Let's Encrypt, HTTP to HTTPS, HTTP/3, strips `Server`), the app, Postgres 16 with no published port on an internal network, a one-off `migrate` container, a `jobs` cron container and a `backup` container. Every image is pinned to an exact version at least two weeks old (`node:24.21.0-bookworm-slim`, `caddy:2.11.4-alpine`, `postgres:16.15-alpine3.23`, `alpine:3.23.6`, `restic/restic:0.19.1`). Caddy access logs carry paths, which hold ids only (D-029).
+
+### D-101: The app image
+
+A multi-stage Dockerfile builds the standalone output and runs it as `node` (uid 1000) with `HOSTNAME=0.0.0.0` and a Node-based healthcheck on `/api/health`. In Compose the container is read-only (tmpfs for `/tmp` and `.next/cache`), drops every capability and sets `no-new-privileges`. The app gets only the variables it needs, listed one by one, not the whole `.env`. Build-time env values are placeholders inside the build stage's `RUN`; no secret is in any image layer. `NEXT_PUBLIC_*` values are never read as literals in server code, so they are not inlined at build time and the same image works for any domain.
+
+### D-102: Migrations run before the app, never inside it
+
+The `migrate` target holds only the SQL files, a 20-line runner and `drizzle-orm` plus `postgres` (copied from the locked install, so the versions match). Compose starts the app only after `migrate` exits successfully. Migrations should be additive (new columns nullable or defaulted, renames in two steps) so the previous image still runs on the newer schema and a rollback is just redeploying it.
+
+### D-103: First start
+
+An empty production database has no rate classes, branch or account, and the seed is demo data. When `BOOTSTRAP_OWNER_EMAIL`, `BOOTSTRAP_OWNER_NAME` and `BOOTSTRAP_BRANCH_NAME` are set, the server's first boot creates the four rate classes (the fixture rates, editable in settings), clinic settings, the main branch and the owner's account with an unusable random password, then emails a reset link. It runs under an advisory lock and does nothing once any user exists. The variables are removed afterwards.
+
+### D-104: Production configuration rules
+
+On top of the earlier rules in `env.schema.ts` (D-006: no role switcher, no demo clock, SMTP required), production now refuses to start unless `NEXT_PUBLIC_APP_URL` is https (cookies are Secure) and `CRON_SECRET` is set (the daily job must run). Password reset email failures are logged with the user id (never the link, which holds the token), because Better Auth hides them from the caller.
+
+### D-105: Health endpoint
+
+`GET /api/health` answers `{"status":"ok","db":"ok"}` (200) or `degraded`/`down` (503) after a `select 1` with a two-second timeout. It reveals nothing else, needs no session and is excluded from the login redirect.
+
+### D-106: Scheduled work
+
+The `jobs` container runs busybox crond and calls `POST /api/jobs/materialize` with `CRON_SECRET` at 17:00 UTC (01:00 Manila) over the internal network. The secret is written into the container's root-only crontab at start.
+
+### D-107: Backups
+
+`backup` (Postgres 16 client tools plus the restic binary) streams `pg_dump --format=custom` into restic at 18:00 UTC (02:00 Manila), so no unencrypted dump touches the disk, keeps 14 daily, 8 weekly and 12 monthly snapshots, and checks a 10% sample every Sunday. The repository is any S3-compatible bucket; it is created on first start. `RESTIC_PASSWORD` must also be stored off the server. docs/deploy.md has the tested restore steps. `backup` is the only service besides the app with an outbound network.
+
+### D-108: CI release and deploy
+
+On the default branch, `images` builds the runner and migrate targets with Docker-in-Docker and pushes both, tagged with the commit SHA and `latest`, to the GitLab registry. `deploy` is manual and protected: it copies the compose file and `deploy/` to the server over SSH (host key pinned with `DEPLOY_KNOWN_HOSTS`), sets `APP_TAG` to the commit, pulls, `up -d`, and checks `/api/health` over HTTPS.

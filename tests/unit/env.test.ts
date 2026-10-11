@@ -36,13 +36,35 @@ describe("parseEnv", () => {
   });
 
   it("refuses the role switcher and missing SMTP in production", () => {
-    const production = { ...valid, NODE_ENV: "production", SMTP_URL: "smtps://u:p@mail.test:465" };
+    const production = {
+      ...valid,
+      NODE_ENV: "production",
+      NEXT_PUBLIC_APP_URL: "https://app.crbclinic.test",
+      SMTP_URL: "smtps://u:p@mail.test:465",
+      CRON_SECRET: "c".repeat(32),
+    };
     expect(parseEnv(production).NODE_ENV).toBe("production");
     expect(() => parseEnv({ ...production, NEXT_PUBLIC_DEV_ROLE_SWITCHER: "true" })).toThrow(
       /must be false in production/,
     );
     expect(() => parseEnv({ ...production, SMTP_URL: undefined })).toThrow(
       /SMTP_URL: is required in production/,
+    );
+  });
+
+  it("needs https and a cron secret in production", () => {
+    const production = {
+      ...valid,
+      NODE_ENV: "production",
+      NEXT_PUBLIC_APP_URL: "https://app.crbclinic.test",
+      SMTP_URL: "smtps://u:p@mail.test:465",
+      CRON_SECRET: "c".repeat(32),
+    };
+    expect(() => parseEnv({ ...production, NEXT_PUBLIC_APP_URL: "http://app.test" })).toThrow(
+      /must be an https:\/\/ URL in production/,
+    );
+    expect(() => parseEnv({ ...production, CRON_SECRET: undefined })).toThrow(
+      /CRON_SECRET: is required in production/,
     );
   });
 
