@@ -196,7 +196,12 @@ export function PatientDetail({
               </DropdownMenuItem>
               {canSeeMoney && (
                 <DropdownMenuItem
-                  onSelect={() => openDialog({ kind: "advance", patientId: patient.id })}
+                  onSelect={() =>
+                    openDialog({
+                      kind: "advance",
+                      patient: { id: patient.id, name, service: patient.service },
+                    })
+                  }
                 >
                   <HandCoins /> Record advance
                 </DropdownMenuItem>
@@ -442,7 +447,12 @@ export function PatientDetail({
               <Button
                 size="sm"
                 className="ml-auto"
-                onClick={() => openDialog({ kind: "advance", patientId: patient.id })}
+                onClick={() =>
+                  openDialog({
+                    kind: "advance",
+                    patient: { id: patient.id, name, service: patient.service },
+                  })
+                }
               >
                 <Plus /> Record advance
               </Button>

@@ -8,6 +8,7 @@ import { SvcDot } from "@/components/app/svc-dot";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InputGroup } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -20,6 +21,8 @@ import { formatPeso } from "@/lib/money";
 import { payrollLine } from "@/lib/payroll";
 import { SERVICE_BG } from "@/lib/services";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
+
+import { setLowCreditThresholdAction } from "@/app/(app)/billing/actions";
 
 import { saveRatesAction } from "../actions";
 import { digitsOnly } from "./add-form";
@@ -137,6 +140,42 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
           </TableBody>
         </Table>
       </Card>
+      <LowCreditCard thresholdCentavos={data.lowCreditThresholdCentavos} />
     </>
+  );
+}
+
+function LowCreditCard({ thresholdCentavos }: { thresholdCentavos: number }) {
+  const [pending, startTransition] = React.useTransition();
+  const [pesos, setPesos] = React.useState(String(thresholdCentavos / 100));
+  const save = () =>
+    startTransition(async () => {
+      const result = await setLowCreditThresholdAction(Number(pesos || 0));
+      if (result.ok)
+        toast.success("Reminder saved", {
+          description: `Guardians get flagged when credit drops under ${formatPeso(Number(pesos || 0) * 100)}.`,
+        });
+      else toast.error(result.error);
+    });
+  return (
+    <Card className="mt-4 flex flex-wrap items-end gap-3 p-4">
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        <Label htmlFor="low-credit">Low credit reminder</Label>
+        <p className="text-xs text-muted-foreground">
+          Flag a patient when their advance credit falls under this amount.
+        </p>
+      </div>
+      <InputGroup
+        id="low-credit"
+        prefix="₱"
+        inputMode="numeric"
+        className="w-[140px]"
+        value={pesos}
+        onChange={(e) => setPesos(digitsOnly(e.target.value))}
+      />
+      <Button size="sm" variant="outline" onClick={save} disabled={pending}>
+        Save
+      </Button>
+    </Card>
   );
 }

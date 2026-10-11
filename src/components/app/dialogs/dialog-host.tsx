@@ -10,13 +10,14 @@ import { HistoryDialog } from "./history-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { SessionDialog } from "./session-dialog";
 import { SessionNoteDialog } from "./session-note-dialog";
+import type { ServiceKey } from "@/lib/services";
 import type { AppointmentDetail } from "@/server/services/scheduling";
 
 export type DialogRequest =
   | { kind: "booking"; draft?: Partial<BookingDraft>; reschedule?: AppointmentDetail }
   | { kind: "session"; appointmentId: string }
   | { kind: "payment"; appointmentId: string }
-  | { kind: "advance"; patientId?: string }
+  | { kind: "advance"; patient?: { id: string; name: string; service: ServiceKey } }
   | { kind: "history"; appointmentId: string };
 
 type DialogsApi = { openDialog: (request: DialogRequest) => void; closeDialog: () => void };
@@ -82,7 +83,7 @@ export function DialogHost({ children, today }: { children: React.ReactNode; tod
         <PaymentDialog key={key} {...shared} appointmentId={request.appointmentId} />
       )}
       {request?.kind === "advance" && viewer.role !== "therapist" && (
-        <AdvancePaymentDialog key={key} {...shared} patientId={request.patientId} />
+        <AdvancePaymentDialog key={key} {...shared} patient={request.patient} today={today} />
       )}
       {request?.kind === "history" && (
         <HistoryDialog key={key} {...shared} appointmentId={request.appointmentId} />

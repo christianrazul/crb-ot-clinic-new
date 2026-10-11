@@ -9,6 +9,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Role } from "@/lib/roles";
+import type { NotificationItem } from "@/server/services/notifications";
 
 import { SCREEN_TITLES, SCREENS_WITH_NEW_SESSION, screenFromPathname } from "./nav";
 import { NotificationsMenu } from "./notifications-menu";
@@ -16,7 +17,15 @@ import { useShell } from "./shell-context";
 import { ThemeToggle } from "./theme-toggle";
 import { useModKeyLabel } from "./use-mod-key";
 
-export function AppHeader({ branchName, role }: { branchName: string; role: Role }) {
+export function AppHeader({
+  branchName,
+  role,
+  notifications,
+}: {
+  branchName: string;
+  role: Role;
+  notifications: NotificationItem[];
+}) {
   const { toggleSidebar, setCommandOpen } = useShell();
   const { openDialog } = useDialogs();
   const modKey = useModKeyLabel();
@@ -72,7 +81,7 @@ export function AppHeader({ branchName, role }: { branchName: string; role: Role
           <Search />
         </Button>
         <ThemeToggle />
-        <NotificationsMenu />
+        <NotificationsMenu items={notifications} />
         {showNewSession && (
           <Button
             size="sm"

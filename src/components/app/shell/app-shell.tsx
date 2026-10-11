@@ -7,6 +7,7 @@ import { DialogHost } from "@/components/app/dialogs/dialog-host";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { BranchFixture } from "@/lib/fixtures/branches";
 import type { UserFixture } from "@/lib/fixtures/users";
+import type { NotificationItem } from "@/server/services/notifications";
 
 import { AppHeader } from "./app-header";
 import { AppSidebar } from "./app-sidebar";
@@ -21,6 +22,7 @@ type AppShellProps = {
   showRoleSwitcher: boolean;
   /** Clinic date (yyyy-MM-dd) from the server clock, for dialog defaults. */
   today: string;
+  notifications: NotificationItem[];
   children: React.ReactNode;
 };
 
@@ -35,6 +37,7 @@ export function AppShell({
   sidebarCollapsed,
   showRoleSwitcher,
   today,
+  notifications,
   children,
 }: AppShellProps) {
   return (
@@ -51,7 +54,11 @@ export function AppShell({
               />
               <div className="flex min-w-0 flex-1 flex-col md:py-2 md:pr-2">
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background md:rounded-xl md:border md:shadow-xs">
-                  <AppHeader branchName={branch.name} role={user.role} />
+                  <AppHeader
+                    branchName={branch.name}
+                    role={user.role}
+                    notifications={notifications}
+                  />
                   <main id="main" className="min-h-0 flex-1 overflow-y-auto">
                     {children}
                   </main>

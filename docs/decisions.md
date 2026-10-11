@@ -463,3 +463,33 @@ The therapist's earnings this month are the sum of the therapist share on each a
 ### D-060 (updated): What still runs on the demo store
 
 Billing, payments and advance credit (Milestone 9), payroll (Milestone 10) and the dashboard (Milestone 11).
+
+## Milestone 9: Billing and payments
+
+### D-078: One transaction per payment, locked rows
+
+`collectPayment` locks the appointment row, then the patient row (`SELECT … FOR UPDATE`), checks there is no payment yet, quotes the payment with the same `quotePayment` the dialog uses, takes a receipt number, and writes the payment, the credit deduction and the audit entry in one transaction. Two desks pressing Collect at the same moment: the second waits on the lock and then sees the first payment. The unique constraint on `payments.appointment_id` is the last guard. A DB test runs two real transactions in parallel and checks only one charge lands.
+
+### D-079: Credit spent is a ledger row linked to the payment
+
+Applying credit inserts a negative `deduction` row in `credit_ledger` with `related_payment_id`. The balance is always the sum of the ledger; there is no stored balance column to drift.
+
+### D-080: Receipt numbers
+
+Payments and advance top-ups share the branch's gapless counter (D-040). On an advance, the desk can type the number from a paper receipt book; blank takes the next number. Typed numbers do not move the counter.
+
+### D-081: What the billing day shows
+
+A day lists sessions that are checked in or attended, plus any session that has a payment, so the desk sees what to collect next and what was paid. "Outstanding" is attended sessions before that day with no payment (D-043); "Credit on file" is every patient in the branch with a positive balance.
+
+### D-082: Low credit reminders
+
+The owner sets the reminder amount in Settings → Rates (default ₱1,000, stored in `clinic_settings`, audited). A patient with credit above zero and under it shows in the header notifications, and the desk gets a warning toast when a payment leaves the balance under it. Notifications are computed on each page load; there is no notifications table yet. Notes overdue and no-shows show there too.
+
+### D-083: Non-cash needs a reference
+
+GCash, Maya, bank transfer and card payments, and advances paid that way, need a reference number. Cash needs the amount received, which must cover what's due; change is shown and not stored separately.
+
+### D-060 (updated): What still runs on the demo store
+
+Payroll (Milestone 10) and the dashboard (Milestone 11), plus the shell's `viewer`.

@@ -143,6 +143,9 @@ test.describe("front desk flows", () => {
     const row = page.getByRole("row", { name: /Enzo Dela Peña/ });
     await expect(row.getByText("Paid")).toBeVisible();
     await expect(row.getByText("Credit ₱4,200")).toBeVisible();
+    // Stored in the database: it survives a reload.
+    await page.reload();
+    await expect(page.getByRole("row", { name: /Enzo Dela Peña.*Credit ₱700 Paid/ })).toBeVisible();
   });
 
   test("cash must cover the fee and shows change", async ({ page }) => {

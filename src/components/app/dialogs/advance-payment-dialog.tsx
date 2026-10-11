@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
+import { getCreditBalanceAction, recordTopUpAction } from "@/app/(app)/billing/actions";
 import { SummaryRow } from "@/components/app/detail-bits";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,9 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { formatManila } from "@/lib/dates";
-import { byId, creditBalanceOf, displayName } from "@/lib/demo/selectors";
-import { DEMO_NOW } from "@/lib/fixtures/demo-clock";
 import { formatPeso, pesosToCentavos } from "@/lib/money";
 import type { PaymentMethod } from "@/lib/payment-methods";
+import type { ServiceKey } from "@/lib/services";
 import { cn } from "@/lib/utils";
 
 import { MethodPicker } from "./method-picker";
@@ -38,46 +37,64 @@ const PACKAGES = [
 /** The usual OT session fee, for the "covers about N sessions" hint. */
 const OT_SESSION_CENTAVOS = 70_000;
 
-type Props = { open: boolean; onOpenChange: (open: boolean) => void; patientId?: string };
+type Picked = { id: string; name: string; service: ServiceKey };
+type Props = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Preselected and locked, when opened from a patient record. */
+  patient?: Picked;
+  today: string;
+};
 
 /** Advance payment: non-refundable credit added to the patient's ledger. */
-export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPatientId }: Props) {
-  const { state, dispatch } = useDemoStore();
-  const [patientId, setPatientId] = React.useState<string | null>(lockedPatientId ?? null);
-  const [selectedPatient, setSelectedPatient] = React.useState<{
-    id: string;
-    name: string;
-    service: "ot" | "speech" | "sped" | "aide" | "none";
-  } | null>(null);
+export function AdvancePaymentDialog({ open, onOpenChange, patient: locked, today }: Props) {
+  const [patient, setPatient] = React.useState<Picked | null>(locked ?? null);
+  const [current, setCurrent] = React.useState<number | null>(null);
   const [query, setQuery] = React.useState("");
   const [amountText, setAmountText] = React.useState("");
   const [method, setMethod] = React.useState<PaymentMethod>("cash");
   const [referenceNo, setReferenceNo] = React.useState("");
   const [receiptNo, setReceiptNo] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
 
-  const patient = byId(state.patients, patientId);
+  // Load the patient's current balance whenever the patient changes.
+  React.useEffect(() => {
+    if (!patient) return;
+    let cancelled = false;
+    getCreditBalanceAction(patient.id).then((result) => {
+      if (!cancelled) setCurrent(result.ok ? result.data : 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [patient]);
+
   const amount = amountText ? (pesosToCentavos(amountText) ?? 0) : 0;
-  const current = patientId ? creditBalanceOf(state, patientId) : 0;
+  const balance = current ?? 0;
   const isCash = method === "cash";
-  const canConfirm = Boolean(patient) && amount > 0 && (isCash || referenceNo.trim().length > 0);
+  const canConfirm =
+    Boolean(patient) && amount > 0 && (isCash || referenceNo.trim().length > 0) && !pending;
 
-  const confirm = () => {
-    if (!canConfirm || !patient) return;
-    dispatch({
-      type: "credit/topUp",
-      patientId: patient.id,
-      amountCentavos: amount,
-      method,
-      referenceNo,
-      receiptNo,
-      notes,
+  const confirm = () =>
+    startTransition(async () => {
+      if (!patient) return;
+      setError(null);
+      const result = await recordTopUpAction({
+        patientId: patient.id,
+        amountCentavos: amount,
+        method,
+        referenceNo,
+        receiptNo,
+        notes,
+      });
+      if (!result.ok) return setError(result.error);
+      onOpenChange(false);
+      toast.success(`Advance recorded for ${patient.name}`, {
+        description: `${formatPeso(amount)} added to credit, receipt ${result.data.receiptNo}`,
+      });
     });
-    onOpenChange(false);
-    toast.success(`Advance recorded for ${displayName(patient)}`, {
-      description: `${formatPeso(amount)} added to credit`,
-    });
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,32 +102,32 @@ export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPati
         <DialogHeader>
           <DialogTitle>Record advance payment</DialogTitle>
           <DialogDescription>
-            {formatManila(DEMO_NOW, "weekdayDay")}. Advance payments are non-refundable credit.
+            {formatManila(new Date(`${today}T04:00:00Z`), "weekdayDay")}. Advance payments are
+            non-refundable credit.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="grid gap-4">
           <div className="grid gap-1.5">
             <Label htmlFor="tu-patient">Patient</Label>
-            {lockedPatientId && patient ? (
+            {locked ? (
               <div className="flex items-center gap-2.5 rounded-md border bg-muted/40 px-3 py-2">
                 <PatientAvatar
-                  name={displayName(patient)}
-                  service={patient.service}
+                  name={locked.name}
+                  service={locked.service}
                   className="size-6 text-[10px]"
                 />
-                <span className="text-sm font-medium">{displayName(patient)}</span>
+                <span className="text-sm font-medium">{locked.name}</span>
               </div>
             ) : (
               <PatientCombobox
                 id="tu-patient"
-                value={patientId}
-                selected={selectedPatient}
+                value={patient?.id ?? null}
+                selected={patient}
                 query={query}
                 onQueryChange={setQuery}
-                creditOf={(id) => creditBalanceOf(state, id)}
                 onPick={(picked) => {
-                  setPatientId(picked.id);
-                  setSelectedPatient(picked);
+                  setCurrent(null);
+                  setPatient(picked);
                 }}
                 placeholder="Select a patient"
               />
@@ -165,12 +182,15 @@ export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPati
               </div>
             )}
             <div className={cn("grid gap-1.5", isCash && "col-span-2")}>
-              <Label htmlFor="tu-rc">Receipt no.</Label>
+              <Label htmlFor="tu-rc">
+                Receipt no.{" "}
+                <span className="font-normal text-muted-foreground">(blank: next number)</span>
+              </Label>
               <Input
                 id="tu-rc"
                 value={receiptNo}
                 onChange={(event) => setReceiptNo(event.target.value)}
-                placeholder={`CRB-${state.nextReceiptNo}`}
+                placeholder="Automatic"
               />
             </div>
           </div>
@@ -187,17 +207,28 @@ export function AdvancePaymentDialog({ open, onOpenChange, patientId: lockedPati
             />
           </div>
           <div className="rounded-lg bg-muted/50 px-3.5 py-2.5">
-            <SummaryRow label="Current credit" value={formatPeso(current)} />
+            <SummaryRow
+              label="Current credit"
+              value={patient && current === null ? "…" : formatPeso(balance)}
+            />
             <SummaryRow label="Advance received" value={amount ? `+${formatPeso(amount)}` : "–"} />
             <Separator className="my-1.5" />
-            <SummaryRow label="Balance after" value={formatPeso(current + amount)} strong />
+            <SummaryRow label="Balance after" value={formatPeso(balance + amount)} strong />
             {amount > 0 && (
               <p className="pt-1 text-xs text-muted-foreground">
-                Covers about {Math.floor((current + amount) / OT_SESSION_CENTAVOS)} OT sessions at{" "}
+                Covers about {Math.floor((balance + amount) / OT_SESSION_CENTAVOS)} OT sessions at{" "}
                 {formatPeso(OT_SESSION_CENTAVOS)}.
               </p>
             )}
           </div>
+          {error && (
+            <p
+              role="alert"
+              className="rounded-lg border border-danger/30 bg-danger-soft/60 px-3 py-2 text-sm text-danger-strong"
+            >
+              {error}
+            </p>
+          )}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
