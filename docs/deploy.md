@@ -83,7 +83,14 @@ cd /srv/crb-ot-clinic
 docker compose -f docker-compose.prod.yml logs app | grep owner
 ```
 
-Then remove the `BOOTSTRAP_*` lines from `.env`. The owner signs in, sets rates and session types in Settings, adds staff, and creates the other accounts; each new user gets an email to set their own password.
+Then remove the `BOOTSTRAP_*` lines from `.env`. The owner signs in and sets rates and session types in Settings.
+
+**Onboarding people.** Nobody sets a password for anyone else:
+
+- **Therapists, aides and tutors:** Settings → Staff → Add staff member, with a login email. Or, for someone already on staff, Settings → Team accounts → Add account → "Therapist login for …".
+- **Front desk (secretaries) and other owners:** Settings → Team accounts → Add account, pick the access and branches.
+
+They get "You're invited to CRB OT Clinic", follow the link (it works once, for 3 days), choose a password and sign in. Team accounts shows who is still **Invited**, who is **Active** and when they last signed in, and lets the owner resend an invite, change someone's access, or **Turn off** an account when someone leaves (they are signed out at once; their history stays).
 
 ## 5. Everyday operations
 

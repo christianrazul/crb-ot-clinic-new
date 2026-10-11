@@ -50,6 +50,8 @@ export const envSchema = z
      * For the end-to-end suite only, which runs a production build: lets it
      * log emails instead of requiring SMTP. Never set this on a real server.
      */
+    /** With E2E_TEST_MODE: also append every email to this file, for tests to read links. */
+    E2E_OUTBOX: z.string().optional(),
     E2E_TEST_MODE: z
       .enum(["true", "false"])
       .default("false")

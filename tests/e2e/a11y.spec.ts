@@ -4,7 +4,15 @@ import { expect, type Page, test } from "@playwright/test";
 import { storageFor } from "./helpers";
 
 const SCREENS = {
-  superadmin: ["/dashboard", "/schedule", "/patients", "/billing", "/payroll", "/settings"],
+  superadmin: [
+    "/dashboard",
+    "/schedule",
+    "/patients",
+    "/billing",
+    "/payroll",
+    "/settings",
+    "/settings?tab=team",
+  ],
   secretary: ["/today", "/schedule?view=week", "/patients?patient=pat_01", "/billing"],
   therapist: ["/my-day", "/schedule", "/patients"],
 } as const;

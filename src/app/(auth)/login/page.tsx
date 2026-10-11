@@ -15,19 +15,21 @@ export const metadata: Metadata = { title: "Log in" };
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reset?: string }>;
+  searchParams: Promise<{ reset?: string; welcome?: string }>;
 }) {
   const actor = await getActor();
   if (actor) redirect(ROLE_HOME[actor.role]);
-  const { reset } = await searchParams;
+  const { reset, welcome } = await searchParams;
 
   return (
     <>
       <h1 className="text-lg font-semibold tracking-tight">Log in</h1>
       <p className="mt-1 mb-5 text-sm text-muted-foreground">
-        {reset
-          ? "Password changed. Log in with your new password."
-          : "Use the account the clinic owner set up for you."}
+        {welcome
+          ? "Your password is set. Log in to get started."
+          : reset
+            ? "Password changed. Log in with your new password."
+            : "Use the account the clinic owner set up for you."}
       </p>
       <AuthForm action={signInAction} submitLabel="Log in" pendingLabel="Logging in…">
         <div className="grid gap-1.5">

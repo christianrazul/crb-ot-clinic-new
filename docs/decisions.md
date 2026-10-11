@@ -628,3 +628,25 @@ The repository lives on GitHub, so the pipeline moved from `.gitlab-ci.yml` to `
 ### D-110: Backups on the server until a bucket is set
 
 To go live before an off-site bucket exists, `RESTIC_REPOSITORY` is optional: unset, `backup` keeps its encrypted restic repository in `/srv/crb-ot-clinic/backups` (bind-mounted at `/backups`). Schedule, retention and checks are the same. It protects against mistakes, bad migrations and corrupted data, but not against losing the VPS, so an off-site repository (D-107) is still the target; switching is a matter of setting the variable and the S3 keys.
+
+## Team accounts
+
+### D-111: Team accounts and onboarding
+
+Settings → Team accounts (owner only, `user:manage`) lists every account sharing a branch with the owner: access, branches, and status. "Invited" means they have never signed in, "Active" shows the last sign-in (from the `auth.sign_in` audit entries, so no new column), "Locked" follows the lockout, and "Turned off" is `users.active = false`. From there the owner adds front desk or owner accounts, gives an existing staff member a login, changes access and branches, resends invites, and turns accounts off or on. Every change is audited.
+
+- Therapist accounts always belong to a staff record (it is what scopes them to their own patients and drives payroll), so "therapist" is offered only as "Therapist login for <staff member>", and such an account can't be switched to another role.
+- Safeguards: you can't change your own role or turn yourself off, and the clinic always keeps one active owner.
+- Changing someone's role, or turning them off, deletes their sessions so it takes effect at once (permissions are also re-read from the database on every request).
+
+### D-112: Invites instead of password resets
+
+New accounts used to get the forgot-password email, which lasts an hour and shared the form's 5-per-15-minutes-per-IP limit with the owner's own IP, so onboarding a team silently dropped invites. Invites now have their own path (`src/server/auth/invites.ts`): a 72-hour, single-use token in Better Auth's verification table, in its own format so its reset endpoint accepts it; a limit of 5 per invitee per hour instead of per IP; and the send result is reported to the owner ("didn't go out", "too many") instead of being swallowed. The link opens a welcome page that names the person's access and branch, then the login page says the password is set.
+
+### D-113: Tokens stored hashed
+
+Better Auth's `verification.storeIdentifier` is `"hashed"`: reset and invite tokens are kept only as SHA-256 hashes, so someone holding a copy of the database or a backup can't use one. Links sent before this change stop working; people use "Forgot password" for a new one.
+
+### D-114: A test outbox
+
+With `E2E_TEST_MODE`, `E2E_OUTBOX` names a file the server appends every email to, so the end-to-end suite can follow a real invite link (tokens can't be read back from the database any more). It is ignored outside test mode and never set on a server.

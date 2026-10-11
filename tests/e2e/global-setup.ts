@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 
 import postgres from "postgres";
 
-import { E2E_DATABASE_URL } from "../../playwright.config";
+import { E2E_DATABASE_URL, E2E_OUTBOX } from "../../playwright.config";
 
 /** Recreates the e2e database and seeds the demo clinic before any test runs. */
 export default async function globalSetup() {
+  writeFileSync(E2E_OUTBOX, "");
   const target = new URL(E2E_DATABASE_URL);
   const admin = new URL(E2E_DATABASE_URL);
   admin.pathname = "/postgres";

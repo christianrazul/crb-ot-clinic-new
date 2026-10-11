@@ -1,9 +1,15 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = `http://localhost:${PORT}`;
 export const E2E_DATABASE_URL =
   process.env.E2E_DATABASE_URL ?? "postgres://crb:crb@localhost:5433/crb_e2e";
+
+/** The test server also writes every email here, so tests can follow invite links. */
+export const E2E_OUTBOX = join(tmpdir(), `crb-e2e-outbox-${PORT}.jsonl`);
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -42,6 +48,7 @@ export default defineConfig({
       BETTER_AUTH_SECRET: "e2e-only-secret-that-is-long-enough-1234",
       NEXT_PUBLIC_DEV_ROLE_SWITCHER: "false",
       E2E_TEST_MODE: "true",
+      E2E_OUTBOX,
       DEMO_NOW: "2026-08-22T10:20:00+08:00",
       // The standalone server binds to $HOSTNAME, which Docker sets to the
       // container id. Bind to every interface so localhost reaches it in CI.

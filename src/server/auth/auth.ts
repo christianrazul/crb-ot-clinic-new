@@ -62,6 +62,9 @@ export const auth = betterAuth({
       active: { type: "boolean", input: false, defaultValue: true },
     },
   },
+  // Reset and invite tokens are stored only as SHA-256 hashes, so a copy of
+  // the database can't be used to take over accounts (invites.ts matches this).
+  verification: { storeIdentifier: "hashed" },
   session: {
     expiresIn: SESSION_DAYS * 24 * 60 * 60,
     updateAge: 24 * 60 * 60,

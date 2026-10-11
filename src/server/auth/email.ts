@@ -1,5 +1,7 @@
 import "server-only";
 
+import { appendFile } from "node:fs/promises";
+
 import nodemailer from "nodemailer";
 
 import { env } from "@/env";
@@ -12,6 +14,9 @@ type Email = { to: string; subject: string; text: string };
  * Production refuses to boot without SMTP_URL (see env.schema.ts).
  */
 export async function sendEmail(email: Email) {
+  if (env.E2E_TEST_MODE && env.E2E_OUTBOX) {
+    await appendFile(env.E2E_OUTBOX, JSON.stringify(email) + "\n");
+  }
   if (!env.SMTP_URL) {
     console.info(`\n[email] To: ${email.to}\n[email] Subject: ${email.subject}\n${email.text}\n`);
     return;

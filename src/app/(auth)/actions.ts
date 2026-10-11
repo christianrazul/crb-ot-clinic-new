@@ -77,5 +77,5 @@ export async function resetPasswordAction(_state: FormState, form: FormData): Pr
   } catch {
     return { error: "This reset link has expired or was already used. Ask for a new one." };
   }
-  redirect("/login?reset=1");
+  redirect(form.get("invite") ? "/login?welcome=1" : "/login?reset=1");
 }

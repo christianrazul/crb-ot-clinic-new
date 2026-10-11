@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Percent,
   ScrollText,
+  ShieldCheck,
   UserRound,
   Users,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { PatientsSection } from "./patients-section";
 import { RatesSection } from "./rates-section";
 import { SessionTypesSection } from "./session-types-section";
 import { StaffSection } from "./staff-section";
+import { TeamSection } from "./team-section";
 
 const SECTIONS: {
   key: string;
@@ -35,6 +37,7 @@ const SECTIONS: {
   { key: "rates", label: "Rates and splits", icon: Percent, Body: RatesSection },
   { key: "sessions", label: "Session types", icon: Layers, Body: SessionTypesSection },
   { key: "staff", label: "Staff", icon: Users, Body: StaffSection },
+  { key: "team", label: "Team accounts", icon: ShieldCheck, Body: TeamSection },
   { key: "patients", label: "Patients", icon: UserRound, Body: PatientsSection },
   { key: "branches", label: "Branches", icon: Building2, Body: BranchesSection },
   { key: "hours", label: "Operating hours", icon: Clock3, Body: HoursSection },

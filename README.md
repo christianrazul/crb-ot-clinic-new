@@ -113,7 +113,7 @@ Rules that keep this layout safe:
 
 ## Sign-in and permissions
 
-Better Auth handles email and password sign-in with database sessions in httpOnly, SameSite=Lax cookies (Secure in production). There is no self sign-up; the clinic owner creates accounts (`src/server/services/users.ts`).
+Better Auth handles email and password sign-in with database sessions in httpOnly, SameSite=Lax cookies (Secure in production). There is no self sign-up; the clinic owner creates accounts in **Settings → Team accounts** (front desk, other owners, or a login for an existing staff member) or by giving a new staff member a login email under **Settings → Staff**. Each person gets an invite email and sets their own password; the link works once, for 3 days. Reset and invite tokens are stored only as hashes.
 
 - Sign-in is rate limited (10 tries per 15 minutes per IP and email). Five wrong passwords in a row lock the account for 15 minutes.
 - `src/proxy.ts` sends signed-out visitors to `/login`. That is only a first filter: every page, Server Action and endpoint checks the session again on the server.

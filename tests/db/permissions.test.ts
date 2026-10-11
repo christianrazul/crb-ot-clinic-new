@@ -111,7 +111,7 @@ describe("the front desk", () => {
       const input = {
         name: "Rita Cruz",
         email: "rita@example.test",
-        role: "therapist",
+        role: "secretary",
         branchIds: ["br_bangkal"],
       };
       await expect(createAccount(tx, ACTORS.desk, input)).rejects.toBeInstanceOf(ForbiddenError);

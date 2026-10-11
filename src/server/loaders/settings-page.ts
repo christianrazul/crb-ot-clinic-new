@@ -6,6 +6,7 @@ import { getDb } from "@/server/db/client";
 import { patients } from "@/server/db/schema";
 import { lowCreditThreshold } from "@/server/services/payments";
 import { loadSettings } from "@/server/services/settings";
+import { listTeam } from "@/server/services/users";
 import type { ShellSession } from "@/server/session/shell";
 
 /** Every settings section, read from the database with the owner's permissions. */
@@ -25,7 +26,8 @@ export async function loadSettingsPage(session: ShellSession) {
     .orderBy(asc(patients.firstName), asc(patients.lastName));
   const branch = settings.branches.find((b) => b.id === session.branch.id)!;
   const lowCreditThresholdCentavos = await lowCreditThreshold(db);
-  return { ...settings, patients: patientRows, branch, lowCreditThresholdCentavos };
+  const team = await listTeam(db, session.actor);
+  return { ...settings, patients: patientRows, branch, lowCreditThresholdCentavos, team };
 }
 
 export type SettingsPageData = Awaited<ReturnType<typeof loadSettingsPage>>;

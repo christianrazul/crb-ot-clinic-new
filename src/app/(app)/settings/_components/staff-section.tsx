@@ -81,11 +81,18 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
               setName("");
               setEmail("");
               setOpen(false);
-              toast.success(`${trimmed} added to staff`, {
-                description: result.data.invited
-                  ? `We emailed ${email.trim()} a link to set a password.`
-                  : undefined,
-              });
+              const invite = result.data.invite;
+              if (invite && !invite.sent) {
+                toast.warning(`${trimmed} added, but the invite email didn't go out`, {
+                  description: "Resend it from Settings → Team accounts.",
+                });
+              } else {
+                toast.success(`${trimmed} added to staff`, {
+                  description: invite
+                    ? `We emailed ${email.trim()} an invite to set a password.`
+                    : undefined,
+                });
+              }
             })
           }
         >

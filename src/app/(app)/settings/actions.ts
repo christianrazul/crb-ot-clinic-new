@@ -1,11 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { z } from "zod";
 
 import { runAction } from "@/server/actions/run-action";
-import { requestPasswordReset } from "@/server/auth/password-reset";
+import { type InviteResult, sendInvite } from "@/server/auth/invites";
 import { auditEntities, listAuditLog } from "@/server/services/audit";
 import {
   createBranch,
@@ -17,6 +16,12 @@ import {
   updateRateClasses,
   updateSessionTypeRate,
 } from "@/server/services/settings";
+import {
+  createAccount,
+  prepareReinvite,
+  setAccountActive,
+  updateAccount,
+} from "@/server/services/users";
 import { currentBranchId } from "@/server/session/shell";
 
 const id = z.string().min(1).max(64);
@@ -54,18 +59,44 @@ export async function addStaffAction(values: unknown) {
   const result = done(
     await runAction(({ db, actor }) => createStaff(db, actor, { branchId, values })),
   );
+  if (!result.ok) return result;
   // After the transaction commits: email the new user a link to set their password.
-  if (result.ok && result.data.account) {
-    const requestHeaders = await headers();
-    await requestPasswordReset(
-      result.data.account.email,
-      requestHeaders,
-      requestHeaders.get("x-forwarded-for"),
-    );
-  }
-  return result.ok
-    ? { ok: true as const, data: { invited: Boolean(result.data.account) } }
-    : result;
+  const invite = result.data.account ? await inviteAfterCommit(result.data.account.userId) : null;
+  return { ok: true as const, data: { account: Boolean(result.data.account), invite } };
+}
+
+/** Sends the invite once the account exists; reports whether it went out. */
+async function inviteAfterCommit(userId: string): Promise<InviteResult> {
+  const sent = await runAction(({ db }) => sendInvite(db, userId), { transaction: false });
+  return sent.ok ? sent.data : { sent: false, reason: "failed" };
+}
+
+/** A front desk or owner account, or a login for an existing staff member. */
+export async function addAccountAction(values: unknown) {
+  const result = done(await runAction(({ db, actor }) => createAccount(db, actor, values)));
+  if (!result.ok) return result;
+  return { ok: true as const, data: { invite: await inviteAfterCommit(result.data.userId) } };
+}
+
+export async function resendInviteAction(userId: unknown) {
+  const checked = await runAction(({ db, actor }) => prepareReinvite(db, actor, id.parse(userId)));
+  if (!checked.ok) return checked;
+  return { ok: true as const, data: { invite: await inviteAfterCommit(checked.data.userId) } };
+}
+
+export async function updateAccountAction(values: unknown) {
+  return done(await runAction(({ db, actor }) => updateAccount(db, actor, values)));
+}
+
+export async function setAccountActiveAction(userId: unknown, active: unknown) {
+  return done(
+    await runAction(({ db, actor }) =>
+      setAccountActive(db, actor, {
+        userId: id.parse(userId),
+        active: z.boolean().parse(active),
+      }),
+    ),
+  );
 }
 
 export async function setStaffActiveAction(staffId: unknown, active: unknown) {
