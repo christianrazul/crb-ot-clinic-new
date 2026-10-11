@@ -198,11 +198,17 @@ async function accountFor(db: DbExecutor, actor: Actor, userId: string) {
 
 export const updateAccountInput = z.object({
   userId: z.string().min(1).max(64),
+  /** Left out: unchanged. */
+  name: z.string().trim().min(2, "Enter the person's full name.").max(120).optional(),
+  email: z.email("Enter a valid email address.").optional(),
   role: z.enum(ROLES),
   branchIds: z.array(z.string().min(1).max(64)).min(1, "Pick at least one branch.").max(20),
 });
 
-/** Changes someone's role or branches. Therapist accounts stay tied to their staff record. */
+/**
+ * Edits someone's name, sign-in email, role or branches. Therapist accounts
+ * stay tied to their staff record. A new email or role signs them out once.
+ */
 export async function updateAccount(db: DbExecutor, actor: Actor, raw: unknown) {
   const input = updateAccountInput.parse(raw);
   const { user, branchIds: before } = await accountFor(db, actor, input.userId);
@@ -229,18 +235,31 @@ export async function updateAccount(db: DbExecutor, actor: Actor, raw: unknown) 
     );
   }
 
-  await db.update(users).set({ role: input.role }).where(eq(users.id, user.id));
+  const email = (input.email ?? user.email).toLowerCase();
+  const name = input.name ?? user.name;
+  if (email !== user.email) {
+    const [taken] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(sql`lower(${users.email})`, email), ne(users.id, user.id)));
+    if (taken) throw new ValidationError("That email already has an account.");
+  }
+
+  await db.update(users).set({ name, email, role: input.role }).where(eq(users.id, user.id));
   await db.delete(userBranches).where(eq(userBranches.userId, user.id));
   await db.insert(userBranches).values(next.map((branchId) => ({ userId: user.id, branchId })));
-  // New permissions apply on the next request; sign them out so nothing stale lingers.
-  if (input.role !== user.role) await db.delete(sessions).where(eq(sessions.userId, user.id));
+  // New permissions or a new sign-in email: sign them out so nothing stale lingers.
+  const signOut = input.role !== user.role || email !== user.email;
+  if (signOut && user.id !== actor.userId) {
+    await db.delete(sessions).where(eq(sessions.userId, user.id));
+  }
   await writeAudit(db, {
     actorUserId: actor.userId,
     action: "user.update",
     entity: "user",
     entityId: user.id,
-    before: { role: user.role, branchIds: before },
-    after: { role: input.role, branchIds: next },
+    before: { name: user.name, email: user.email, role: user.role, branchIds: before },
+    after: { name, email, role: input.role, branchIds: next },
     ip: actor.ip,
   });
 }

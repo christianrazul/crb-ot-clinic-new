@@ -8,6 +8,7 @@ import {
   hoursInput,
   rateClassesInput,
   sessionTypeInput,
+  staffEditInput,
   staffInput,
 } from "@/lib/validation/settings";
 import type { Actor } from "@/server/auth/actor";
@@ -24,10 +25,11 @@ import {
   sessionTypes,
   staff,
   userBranches,
+  users,
 } from "@/server/db/schema";
 
 import { NotFoundError, ValidationError } from "./errors";
-import { createAccount } from "./users";
+import { createAccount, setAccountActive } from "./users";
 
 const monthRange = (today: string) => {
   const [y, m] = today.split("-").map(Number) as [number, number];
@@ -246,6 +248,17 @@ export async function removeSessionType(db: DbExecutor, actor: Actor, input: { i
   });
 }
 
+/** "Rita Cruz, OTRP" gives surname Cruz and short name "R. Cruz, OTRP" (credentials default to the role). */
+function staffNames(displayName: string, roleShortName: string) {
+  const surname =
+    (displayName.split(",")[0] ?? displayName).trim().split(/\s+/).at(-1) ?? displayName;
+  const initial = displayName.trim()[0]?.toUpperCase() ?? "";
+  const credentials = displayName.includes(",")
+    ? displayName.slice(displayName.indexOf(","))
+    : `, ${roleShortName}`;
+  return { surname, shortName: `${initial}. ${surname}${credentials}` };
+}
+
 /** Adds a staff member; with a login email, also creates their account. */
 export async function createStaff(
   db: DbExecutor,
@@ -259,13 +272,7 @@ export async function createStaff(
     .from(rateClasses)
     .where(eq(rateClasses.id, values.rateClassId));
   if (!rateClass) throw new ValidationError("Pick a role.");
-  const surname =
-    (values.displayName.split(",")[0] ?? values.displayName).trim().split(/\s+/).at(-1) ??
-    values.displayName;
-  const initial = values.displayName.trim()[0]?.toUpperCase() ?? "";
-  const credentials = values.displayName.includes(",")
-    ? values.displayName.slice(values.displayName.indexOf(","))
-    : `, ${rateClass.shortName}`;
+  const { surname, shortName } = staffNames(values.displayName, rateClass.shortName);
   const [{ max } = { max: 0 }] = await db
     .select({ max: sql<number>`coalesce(max(${staff.sortOrder}), 0)`.mapWith(Number) })
     .from(staff);
@@ -274,7 +281,7 @@ export async function createStaff(
     .values({
       branchId: input.branchId,
       displayName: values.displayName,
-      shortName: `${initial}. ${surname}${credentials}`,
+      shortName,
       surname,
       rateClassId: values.rateClassId,
       sortOrder: max + 1,
@@ -301,6 +308,47 @@ export async function createStaff(
   return { staffId: created!.id, account };
 }
 
+/**
+ * Renames a staff member or changes their role. Sessions already marked
+ * attended keep the rate they were paid at (payroll snapshots); the new role's
+ * rate applies from the next one. A linked login's name follows.
+ */
+export async function updateStaff(db: DbExecutor, actor: Actor, raw: unknown) {
+  const input = staffEditInput.parse(raw);
+  const [before] = await db.select().from(staff).where(eq(staff.id, input.id)).for("update");
+  if (!before) throw new NotFoundError();
+  assertCan(actor, "settings:manage", { branchId: before.branchId });
+  const [rateClass] = await db
+    .select()
+    .from(rateClasses)
+    .where(eq(rateClasses.id, input.rateClassId));
+  if (!rateClass) throw new ValidationError("Pick a role.");
+  const { surname, shortName } = staffNames(input.displayName, rateClass.shortName);
+  await db
+    .update(staff)
+    .set({ displayName: input.displayName, shortName, surname, rateClassId: input.rateClassId })
+    .where(eq(staff.id, input.id));
+  if (before.userId) {
+    await db
+      .update(users)
+      .set({ name: input.displayName.split(",")[0]!.trim() })
+      .where(eq(users.id, before.userId));
+  }
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "staff.update",
+    entity: "staff",
+    entityId: input.id,
+    before: { displayName: before.displayName, rateClassId: before.rateClassId },
+    after: { displayName: input.displayName, rateClassId: input.rateClassId },
+    ip: actor.ip,
+  });
+}
+
+/**
+ * Inactive staff can't be booked. Their login, if any, follows: someone who
+ * leaves is signed out and can't sign in; setting them active again restores it.
+ */
 export async function setStaffActive(
   db: DbExecutor,
   actor: Actor,
@@ -319,6 +367,11 @@ export async function setStaffActive(
     after: { active: input.active },
     ip: actor.ip,
   });
+  if (before.userId && before.userId !== actor.userId) {
+    await setAccountActive(db, actor, { userId: before.userId, active: input.active });
+    return { loginChanged: true };
+  }
+  return { loginChanged: false };
 }
 
 /** A new branch with its own receipt counter; the owner who adds it joins it. */

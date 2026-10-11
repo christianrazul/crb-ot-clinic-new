@@ -15,6 +15,7 @@ import {
   updateBranchHours,
   updateRateClasses,
   updateSessionTypeRate,
+  updateStaff,
 } from "@/server/services/settings";
 import {
   createAccount,
@@ -97,6 +98,10 @@ export async function setAccountActiveAction(userId: unknown, active: unknown) {
       }),
     ),
   );
+}
+
+export async function updateStaffAction(values: unknown) {
+  return done(await runAction(({ db, actor }) => updateStaff(db, actor, values)));
 }
 
 export async function setStaffActiveAction(staffId: unknown, active: unknown) {

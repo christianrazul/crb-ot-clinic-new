@@ -100,3 +100,67 @@ test.describe("giving a staff member a login", () => {
     expect((await lastEmailTo(email)).text).toContain("as Therapist at CRB Bangkal");
   });
 });
+
+test.describe("staff controls", () => {
+  test.skip(({ isMobile }) => isMobile, "Writes to the shared database");
+
+  test("edit a staff member, then set them inactive and active again", async ({ page }) => {
+    const name = `Lia Santos ${Date.now() % 100000}`;
+    await page.goto("/settings?tab=staff");
+    await page.getByRole("button", { name: "Add staff member" }).click();
+    await page.getByLabel("Full name").fill(name);
+    await page.getByRole("button", { name: "Add staff member" }).click();
+    await expect(page.getByText(`${name} added to staff`)).toBeVisible();
+
+    await page.getByRole("button", { name: `Actions for ${name}` }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    const dialog = page.getByRole("dialog", { name: `Edit ${name}` });
+    await dialog.getByLabel("Full name").fill(`${name}, OTRP`);
+    await dialog.getByLabel("Role").click();
+    await page.getByRole("option", { name: "Speech Therapist" }).click();
+    await expect(dialog.getByText(/keep the rate they were paid at/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText(`${name}, OTRP updated`)).toBeVisible();
+    const row = page.getByRole("row", { name: new RegExp(`${name}, OTRP`) });
+    await expect(row.getByText("Speech")).toBeVisible();
+
+    // Toasts sit over the bottom rows; let them clear before using the menu.
+    const toasts = page.locator("[data-sonner-toast]");
+    await page.mouse.move(0, 0);
+    await expect(toasts).toHaveCount(0, { timeout: 10_000 });
+    await row.getByRole("button", { name: `Actions for ${name}, OTRP` }).click();
+    await page.getByRole("menuitem", { name: "Set inactive" }).click();
+    await expect(row.getByText("Inactive")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(toasts).toHaveCount(0, { timeout: 10_000 });
+    await row.getByRole("button", { name: `Actions for ${name}, OTRP` }).click();
+    await page.getByRole("menuitem", { name: "Set active" }).click();
+    await expect(row.getByText("Active")).toBeVisible();
+  });
+
+  test("edit a team account's name and email", async ({ page }) => {
+    const email = `desk.${Date.now()}@example.test`;
+    await page.goto("/settings?tab=team");
+    await page.getByRole("button", { name: "Add account" }).click();
+    const add = page.getByRole("dialog", { name: "Add an account" });
+    await add.getByLabel("Full name").fill("Ana Desk");
+    await add.getByLabel("Email").fill(email);
+    await add.getByRole("button", { name: "Send invite" }).click();
+    await expect(page.getByText("Invite sent to Ana Desk")).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
+
+    await page.getByRole("button", { name: "Actions for Ana Desk" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    const edit = page.getByRole("dialog", { name: "Edit Ana Desk" });
+    await edit.getByLabel("Full name").fill("Ana Dizon");
+    await edit.getByLabel("Email").fill(`new.${email}`);
+    await edit.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Ana Dizon updated")).toBeVisible();
+    await expect(
+      page.getByRole("row", {
+        name: new RegExp(`Ana Dizon.*new\\.${email.replace(/\./g, "\\.")}`),
+      }),
+    ).toBeVisible();
+  });
+});

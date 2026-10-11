@@ -650,3 +650,11 @@ Better Auth's `verification.storeIdentifier` is `"hashed"`: reset and invite tok
 ### D-114: A test outbox
 
 With `E2E_TEST_MODE`, `E2E_OUTBOX` names a file the server appends every email to, so the end-to-end suite can follow a real invite link (tokens can't be read back from the database any more). It is ignored outside test mode and never set on a server.
+
+### D-115: Editing staff and accounts
+
+Staff → Edit changes a staff member's name and role (rate class). Their short name and surname are re-derived the same way as when they were added, and a linked login's name follows. Sessions already marked attended keep the rate in their payroll snapshot; the new role's rate applies from the next one. Team accounts → Edit changes name, sign-in email, access and branches in one dialog. A new email or new access signs the person out once (not when you edit yourself); their password is unchanged. Emails stay unique, ignoring case.
+
+### D-116: Staff status drives their login
+
+Setting a staff member inactive (they can't be booked) also turns off their login and signs them out, because someone who leaves should lose access in the same step. Setting them active again turns the login back on. Accounts without a staff record (front desk, owners) are turned off and on from Team accounts.

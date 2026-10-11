@@ -25,6 +25,12 @@ export const staffInput = z.object({
   loginEmail: z.email("Enter a valid email address.").or(z.literal("")).default(""),
 });
 
+export const staffEditInput = z.object({
+  id: z.string().min(1).max(64),
+  displayName: z.string().trim().min(2, "Enter the full name.").max(80),
+  rateClassId: z.string().min(1, "Pick a role."),
+});
+
 export const branchInput = z.object({
   name: z.string().trim().min(2, "Enter the branch name.").max(60),
   location: z.string().trim().max(80).default(""),

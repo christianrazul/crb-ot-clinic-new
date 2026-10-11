@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, UserPlus, UserX } from "lucide-react";
+import { MoreHorizontal, Pencil, UserCheck, UserPlus, UserX } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -11,9 +11,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -39,7 +49,7 @@ import { SERVICE_SOFT } from "@/lib/services";
 import { cn } from "@/lib/utils";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
 
-import { addStaffAction, setStaffActiveAction } from "../actions";
+import { addStaffAction, setStaffActiveAction, updateStaffAction } from "../actions";
 import { AddForm } from "./add-form";
 
 /** Below this, a therapist's month has room for more sessions. */
@@ -51,6 +61,22 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
   const [email, setEmail] = React.useState("");
   const [rateClassId, setRateClassId] = React.useState(data.rateClasses[0]?.id ?? "");
   const [pending, startTransition] = React.useTransition();
+  const [editing, setEditing] = React.useState<StaffMember | null>(null);
+
+  const toggleActive = (member: StaffMember) =>
+    startTransition(async () => {
+      const result = await setStaffActiveAction(member.id, !member.active);
+      if (!result.ok) return void toast.error(result.error);
+      const login = member.userId
+        ? member.active
+          ? " Their login is turned off and they were signed out."
+          : " Their login works again."
+        : "";
+      toast.success(`${member.displayName} set ${member.active ? "inactive" : "active"}`, {
+        description:
+          (member.active ? "They can't be booked." : "They can be booked again.") + login,
+      });
+    });
 
   return (
     <>
@@ -217,20 +243,17 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
                           <MoreHorizontal />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem onSelect={() => setEditing(member)}>
+                          <Pencil /> Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          onSelect={() =>
-                            startTransition(async () => {
-                              const result = await setStaffActiveAction(member.id, !member.active);
-                              if (result.ok)
-                                toast.success(
-                                  `${member.displayName} set ${member.active ? "inactive" : "active"}`,
-                                );
-                              else toast.error(result.error);
-                            })
-                          }
+                          onSelect={() => toggleActive(member)}
+                          className={cn(member.active && "text-danger focus:text-danger")}
                         >
-                          <UserX /> {member.active ? "Set inactive" : "Set active"}
+                          {member.active ? <UserX /> : <UserCheck />}
+                          {member.active ? "Set inactive" : "Set active"}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -241,6 +264,111 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
           </TableBody>
         </Table>
       </Card>
+      {editing && (
+        <EditStaffDialog
+          key={editing.id}
+          member={editing}
+          rateClasses={data.rateClasses}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </>
+  );
+}
+
+type StaffMember = SettingsPageData["staff"][number];
+
+function EditStaffDialog({
+  member,
+  rateClasses,
+  onClose,
+}: {
+  member: StaffMember;
+  rateClasses: SettingsPageData["rateClasses"];
+  onClose: () => void;
+}) {
+  const [name, setName] = React.useState(member.displayName);
+  const [rateClassId, setRateClassId] = React.useState(member.rateClass.id);
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, startTransition] = React.useTransition();
+  const roleChanged = rateClassId !== member.rateClass.id;
+
+  const save = () =>
+    startTransition(async () => {
+      setError(null);
+      const result = await updateStaffAction({
+        id: member.id,
+        displayName: name.trim(),
+        rateClassId,
+      });
+      if (!result.ok) return setError(result.error);
+      toast.success(`${name.trim()} updated`);
+      onClose();
+    });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {member.displayName}</DialogTitle>
+          <DialogDescription>
+            {member.userId
+              ? "Their login name follows. To change their sign-in email, use Team accounts."
+              : "How they appear on the schedule, payroll and receipts."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          <div className="grid gap-1.5">
+            <Label htmlFor="se-name">Full name</Label>
+            <Input
+              id="se-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Rita Cruz, OTRP"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="se-role">Role</Label>
+            <Select value={rateClassId} onValueChange={setRateClassId}>
+              <SelectTrigger id="se-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {rateClasses.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    <span className="flex items-center gap-2">
+                      <SvcDot service={r.service} />
+                      {r.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {roleChanged && (
+              <p className="text-xs text-muted-foreground">
+                Sessions already marked attended keep the rate they were paid at. The new rate
+                applies from the next one.
+              </p>
+            )}
+          </div>
+          {error && (
+            <p
+              role="alert"
+              className="rounded-lg border border-danger/30 bg-danger-soft/60 px-3 py-2 text-sm text-danger-strong"
+            >
+              {error}
+            </p>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={pending || name.trim().length < 2}>
+            Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

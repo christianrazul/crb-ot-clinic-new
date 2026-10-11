@@ -197,7 +197,7 @@ export function TeamSection({ data }: { data: SettingsPageData }) {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onSelect={() => setEditing(account)}>
-                          <Pencil /> Change access
+                          <Pencil /> Edit
                         </DropdownMenuItem>
                         {!account.isYou && (
                           <>
@@ -307,11 +307,19 @@ function AccountDialog({
     startTransition(async () => {
       setError(null);
       if (existing) {
-        const result = await updateAccountAction({ userId: existing.id, role, branchIds });
+        const result = await updateAccountAction({
+          userId: existing.id,
+          name: name.trim(),
+          email: email.trim(),
+          role,
+          branchIds,
+        });
         if (!result.ok) return setError(result.error);
-        toast.success(`${existing.name}'s access updated`, {
-          description:
-            role !== existing.role ? "They were signed out to pick up the change." : undefined,
+        const signedOut =
+          !existing.isYou &&
+          (role !== existing.role || email.trim().toLowerCase() !== existing.email);
+        toast.success(`${name.trim()} updated`, {
+          description: signedOut ? "They were signed out once to pick up the change." : undefined,
         });
         return onClose();
       }
@@ -331,12 +339,10 @@ function AccountDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {existing ? `Change ${existing.name}'s access` : "Add an account"}
-          </DialogTitle>
+          <DialogTitle>{existing ? `Edit ${existing.name}` : "Add an account"}</DialogTitle>
           <DialogDescription>
             {existing
-              ? "Changing what someone can do signs them out once."
+              ? "A new email or access signs them out once. Their password stays the same."
               : "They get an email with a link to set their own password."}
           </DialogDescription>
         </DialogHeader>
@@ -379,31 +385,29 @@ function AccountDialog({
               </p>
             )}
           </div>
-          {!existing && (
-            <>
-              <div className="grid gap-1.5">
-                <Label htmlFor="acct-name">Full name</Label>
-                <Input
-                  id="acct-name"
-                  value={name}
-                  autoComplete="off"
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={linkedStaff ? undefined : "e.g. Jo Lauron"}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="acct-email">Email</Label>
-                <Input
-                  id="acct-email"
-                  type="email"
-                  value={email}
-                  autoComplete="off"
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="They sign in with this"
-                />
-              </div>
-            </>
-          )}
+          <>
+            <div className="grid gap-1.5">
+              <Label htmlFor="acct-name">Full name</Label>
+              <Input
+                id="acct-name"
+                value={name}
+                autoComplete="off"
+                onChange={(e) => setName(e.target.value)}
+                placeholder={linkedStaff ? undefined : "e.g. Jo Lauron"}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="acct-email">Email</Label>
+              <Input
+                id="acct-email"
+                type="email"
+                value={email}
+                autoComplete="off"
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="They sign in with this"
+              />
+            </div>
+          </>
           <fieldset className="grid gap-2">
             <legend className="mb-1.5 text-sm font-medium">Branches</legend>
             {data.branches.map((branch) => {
@@ -441,10 +445,12 @@ function AccountDialog({
             disabled={
               pending ||
               !branchIds.length ||
-              (!existing && (!name.trim() || !email.trim() || access === "staff:"))
+              !name.trim() ||
+              !email.trim() ||
+              (!existing && access === "staff:")
             }
           >
-            {existing ? "Save access" : "Send invite"}
+            {existing ? "Save changes" : "Send invite"}
           </Button>
         </DialogFooter>
       </DialogContent>
