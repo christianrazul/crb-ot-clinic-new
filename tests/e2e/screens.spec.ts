@@ -365,3 +365,31 @@ test.describe("settings persist", () => {
     await expect(page.getByText("Operating hours saved")).toBeVisible();
   });
 });
+
+test.describe("payroll", () => {
+  test("monthly view, weekly totals from attended sessions and CSV export", async ({ page }) => {
+    await page.goto("/payroll");
+    await expect(page.getByText("Therapist and clinic shares for August 2026.")).toBeVisible();
+
+    await page.getByRole("radio", { name: "Weekly" }).click();
+    await expect(page.getByText("Week of Aug 17 to 23, 2026")).toBeVisible();
+    await expect(page).toHaveURL(/period=weekly/);
+    // A past week, so other tests marking sessions attended today can't change it.
+    await page.getByRole("button", { name: "Previous period" }).click();
+    await expect(page.getByText("Week of Aug 10 to 16, 2026")).toBeVisible();
+    await expect(page.getByRole("row", { name: /^Total 36/ })).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("link", { name: "Export CSV" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("payroll-b1-2026-08-10-to-2026-08-16.csv");
+  });
+
+  test.describe("for the front desk", () => {
+    test.use({ storageState: storageFor("secretary") });
+    test("the CSV export is refused", async ({ request }) => {
+      const response = await request.get("/api/payroll/export?period=monthly");
+      expect(response.status()).toBe(403);
+    });
+  });
+});

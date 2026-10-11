@@ -1,10 +1,11 @@
 "use client";
 
-import { Download } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import * as React from "react";
-import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { EmptyState } from "@/components/app/detail-bits";
 import { Page, PageHeader } from "@/components/app/page-layout";
 import { StatStrip } from "@/components/app/stat-strip";
@@ -22,39 +23,42 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { byId } from "@/lib/demo/selectors";
 import { initialsOf } from "@/lib/initials";
 import { formatPeso } from "@/lib/money";
-import { payrollLine, sumPayroll } from "@/lib/payroll";
 import { SERVICE_SOFT } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { PayrollPageData } from "@/server/loaders/payroll-page";
+import { PAYROLL_PERIODS, type PayrollPeriod } from "@/lib/payroll-periods";
 
-const PERIODS = {
-  daily: { label: "Daily", caption: "Saturday, Aug 22, 2026", divisor: 26 },
-  weekly: { label: "Weekly", caption: "Week of Aug 17 to 22, 2026", divisor: 4 },
-  monthly: { label: "Monthly", caption: "August 2026", divisor: 1 },
-} as const;
-type Period = keyof typeof PERIODS;
+const PERIOD_LABELS: Record<PayrollPeriod, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
 
-export function PayrollScreen() {
-  const { state } = useDemoStore();
-  const [period, setPeriod] = React.useState<Period>("monthly");
-  const { caption, divisor } = PERIODS[period];
+function captionFor(data: PayrollPageData) {
+  const from = parseISO(data.from);
+  const through = parseISO(data.through);
+  if (data.period === "daily") return format(from, "EEEE, MMM d, yyyy");
+  if (data.period === "monthly") return format(from, "MMMM yyyy");
+  return from.getMonth() === through.getMonth()
+    ? `Week of ${format(from, "MMM d")} to ${format(through, "d, yyyy")}`
+    : `Week of ${format(from, "MMM d")} to ${format(through, "MMM d, yyyy")}`;
+}
 
-  // Fixture sessions are monthly totals; Milestone 10 computes these from
-  // attended sessions using each session's fee and share snapshot.
-  const rows = state.staff
-    .filter((s) => s.active && s.monthSessions > 0)
-    .map((staff) => {
-      const rateClass = byId(state.rateClasses, staff.rateClassId)!;
-      const sessions = Math.max(1, Math.round(staff.monthSessions / divisor));
-      return {
-        staff,
-        rateClass,
-        line: payrollLine(sessions, rateClass.rateCentavos, rateClass.therapistSharePct),
-      };
-    });
-  const totals = sumPayroll(rows.map((row) => row.line));
+export function PayrollScreen({ data }: { data: PayrollPageData }) {
+  const router = useRouter();
+  const [pending, startTransition] = React.useTransition();
+  const { rows, totals, period } = data;
+  const caption = captionFor(data);
+  const go = (next: { period?: PayrollPeriod; date?: string }) =>
+    startTransition(() =>
+      router.replace(
+        `/payroll?period=${next.period ?? period}&date=${next.date ?? data.date}` as Route,
+        { scroll: false },
+      ),
+    );
+  const exportHref = `/api/payroll/export?period=${period}&date=${data.date}`;
 
   return (
     <Page>
@@ -65,24 +69,43 @@ export function PayrollScreen() {
           size="sm"
           aria-label="Payroll period"
           value={period}
-          onValueChange={(next) => next && setPeriod(next as Period)}
+          onValueChange={(next) => next && go({ period: next as PayrollPeriod })}
         >
-          {(Object.keys(PERIODS) as Period[]).map((key) => (
+          {PAYROLL_PERIODS.map((key) => (
             <ToggleGroupItem key={key} value={key}>
-              {PERIODS[key].label}
+              {PERIOD_LABELS[key]}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!rows.length}
-          onClick={() =>
-            toast.success("Payroll exported", { description: `${caption}, ${rows.length} staff` })
-          }
-        >
-          <Download /> Export CSV
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous period"
+            onClick={() => go({ date: data.previous })}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next period"
+            onClick={() => go({ date: data.next })}
+          >
+            <ChevronRight />
+          </Button>
+        </div>
+        {rows.length ? (
+          <Button size="sm" variant="outline" asChild>
+            <a href={exportHref} download>
+              <Download /> Export CSV
+            </a>
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" disabled>
+            <Download /> Export CSV
+          </Button>
+        )}
       </PageHeader>
       <StatStrip
         items={[
@@ -96,7 +119,7 @@ export function PayrollScreen() {
           },
         ]}
       />
-      <Card className="overflow-hidden">
+      <Card className={cn("overflow-hidden", pending && "opacity-70")}>
         {rows.length ? (
           <Table>
             <TableHeader>
@@ -111,36 +134,34 @@ export function PayrollScreen() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ staff, rateClass, line }) => (
-                <TableRow key={staff.id}>
+              {rows.map((row) => (
+                <TableRow key={row.staffId}>
                   <TableCell>
                     <div className="flex items-center gap-2.5">
                       <Avatar className="size-7" aria-hidden>
-                        <AvatarFallback
-                          className={cn("text-[10px]", SERVICE_SOFT[rateClass.service])}
-                        >
-                          {initialsOf(staff.displayName)}
+                        <AvatarFallback className={cn("text-[10px]", SERVICE_SOFT[row.service])}>
+                          {initialsOf(row.name)}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="font-medium whitespace-nowrap">{staff.displayName}</span>
+                      <span className="font-medium whitespace-nowrap">{row.name}</span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-2 whitespace-nowrap text-muted-foreground">
-                      <SvcDot service={rateClass.service} />
-                      {rateClass.name}
+                      <SvcDot service={row.service} />
+                      {row.rateClassName}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">{line.sessions}</TableCell>
+                  <TableCell className="text-right">{row.line.sessions}</TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {formatPeso(line.rateCentavos)}
+                    {row.rateCentavos === null ? "Varies" : formatPeso(row.rateCentavos)}
                   </TableCell>
-                  <TableCell className="text-right">{formatPeso(line.grossCentavos)}</TableCell>
+                  <TableCell className="text-right">{formatPeso(row.line.grossCentavos)}</TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatPeso(line.therapistShareCentavos)}
+                    {formatPeso(row.line.therapistShareCentavos)}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {formatPeso(line.clinicShareCentavos)}
+                    {formatPeso(row.line.clinicShareCentavos)}
                   </TableCell>
                 </TableRow>
               ))}

@@ -493,3 +493,21 @@ GCash, Maya, bank transfer and card payments, and advances paid that way, need a
 ### D-060 (updated): What still runs on the demo store
 
 Payroll (Milestone 10) and the dashboard (Milestone 11), plus the shell's `viewer`.
+
+## Milestone 10: Payroll
+
+### D-084: Payroll comes only from attended-session snapshots
+
+A staff member's payroll for a period is the sum, over their attended sessions in that branch, of each session's snapshotted rate split by its snapshotted share (D-037), rounded per session the same way as `payrollLine`. Rate changes in settings never move past payroll. When the snapshots in one period differ (a rate changed mid-period), the Rate column shows "Varies".
+
+### D-085: Periods
+
+Daily is one Manila calendar day; weekly is Monday to Sunday; monthly is the calendar month. The page keeps the period and date in the URL (`?period=weekly&date=2026-08-17`) and adds previous/next buttons beside the period switch, which the mockup did not show, so the owner can look back at earlier periods.
+
+### D-086: CSV export
+
+`GET /api/payroll/export?period=&date=` returns the same report as CSV, for the owner's current branch, through the same service and permission check as the page (403 otherwise). Amounts are in pesos with two decimals, one row per staff member and a total row. Cells that start with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` so spreadsheets do not run them as formulas. The file has staff names only, no patient data. Responses are `no-store`.
+
+### D-060 (updated): What still runs on the demo store
+
+The dashboard (Milestone 11) and the shell's `viewer`.
