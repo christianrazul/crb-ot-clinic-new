@@ -1,4 +1,4 @@
-# Project rules on top of the registry packs used in CI (.gitlab-ci.yml).
+# Project rules on top of the registry packs used in CI (.github/workflows/ci.yml).
 rules:
   - id: no-dangerously-set-inner-html
     languages: [typescript]

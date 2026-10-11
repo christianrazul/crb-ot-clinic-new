@@ -165,4 +165,4 @@ The CLI currently imports `cn` from a separate `cn` npm package. Change that imp
 
 ## Continuous integration
 
-`.gitlab-ci.yml` runs lint and format check, typecheck and unit tests in parallel, then a production build.
+GitHub Actions (`.github/workflows/ci.yml`) runs lint and format check, typecheck, unit and database tests, `pnpm audit`, Semgrep, and the end-to-end and accessibility suite on every push and pull request. On `main`, once all of them pass, it builds the app and migrate images, pushes them to the GitHub Container Registry, and waits for approval to deploy (`.github/workflows/deploy.yml`, which can also be run by hand to redeploy or roll back).

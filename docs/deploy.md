@@ -11,7 +11,9 @@ One VPS runs the whole stack with Docker Compose (`docker-compose.prod.yml`):
 | `jobs`    | Calls the daily scheduling job at 01:00 Manila time                           |
 | `backup`  | Encrypted `pg_dump` to an off-site restic repository at 02:00 Manila time     |
 
-Images are built by GitLab CI on `main` and pushed to the project's container registry. The `deploy` job (manual) copies the compose file and `deploy/` to the server and rolls the stack to that commit.
+Images are built by GitHub Actions on `main` and pushed to the GitHub Container Registry (`ghcr.io/christianrazul/crb-ot-clinic-new`). The deploy job waits for your approval, then copies the compose file and `deploy/` to the server and rolls the stack to that commit.
+
+Production: **https://crbotclinic.com** on the VPS at **103.167.150.117**.
 
 ## 1. Prepare the server (once)
 
@@ -33,7 +35,7 @@ mkdir -p /srv/crb-ot-clinic && chown deploy:deploy /srv/crb-ot-clinic
 
 Add the CI deploy key (see step 3) to `/home/deploy/.ssh/authorized_keys`, and set `PasswordAuthentication no` in `/etc/ssh/sshd_config`.
 
-Point the clinic's DNS record (for example `app.crbclinic.ph`) at the server's IP before the first start, so Caddy can get a certificate.
+At your domain registrar, add an **A record** for `crbotclinic.com` (host `@`) pointing to `103.167.150.117`, and remove any parking-page records for `@`. Do this before the first start so Caddy can get a certificate; check with `dig +short crbotclinic.com`.
 
 ## 2. Configure
 
@@ -50,29 +52,38 @@ chmod 600 /srv/crb-ot-clinic/.env
 
 The app validates every variable when it starts and refuses to run with a bad value (for example an `http://` URL, a missing SMTP server, or the demo clock), and says which one.
 
-## 3. Connect GitLab
+## 3. Connect GitHub
 
-In **Settings → CI/CD → Variables**, add these as **protected** (and masked where GitLab allows):
-
-| Variable             | Value                                                                   |
-| -------------------- | ----------------------------------------------------------------------- |
-| `DEPLOY_HOST`        | The server's hostname or IP                                             |
-| `DEPLOY_USER`        | `deploy`                                                                |
-| `DEPLOY_SSH_KEY`     | Type **File**: a private key made for CI only (`ssh-keygen -t ed25519`) |
-| `DEPLOY_KNOWN_HOSTS` | Output of `ssh-keyscan <server>`, so CI can verify the server           |
-| `DEPLOY_DOMAIN`      | The app's hostname, for the environment link                            |
-
-Protect the `main` branch so only maintainers can push or merge, since protected variables are available to it.
-
-On the server, log in to the registry once so it can pull private images (a deploy token with `read_registry` is enough):
+Make a key pair for CI only, on your own computer:
 
 ```bash
-docker login registry.gitlab.com
+ssh-keygen -t ed25519 -f crb-deploy -C "github-actions deploy" -N ""
+ssh-keyscan -t ed25519 103.167.150.117 > crb-known-hosts
 ```
+
+Append `crb-deploy.pub` to `/home/deploy/.ssh/authorized_keys` on the server.
+
+In the repository, **Settings → Environments → New environment**, name it `production`, then:
+
+- **Required reviewers:** add yourself, so every deploy waits for your approval.
+- **Deployment branches:** "Selected branches", `main` only.
+- **Environment secret** `DEPLOY_SSH_KEY`: the contents of `crb-deploy` (the private key). Then delete the local copy.
+- **Environment variables:**
+
+| Variable             | Value                             |
+| -------------------- | --------------------------------- |
+| `DEPLOY_HOST`        | `103.167.150.117`                 |
+| `DEPLOY_USER`        | `deploy`                          |
+| `DEPLOY_DOMAIN`      | `crbotclinic.com`                 |
+| `DEPLOY_KNOWN_HOSTS` | the contents of `crb-known-hosts` |
+
+Also protect `main` (**Settings → Branches**: require pull requests and passing checks), since it is the only branch that can deploy.
+
+**Images.** After the first pipeline on `main` pushes them, open **your profile → Packages**, and for both `crb-ot-clinic-new` and `crb-ot-clinic-new/migrate` choose **Package settings → Change visibility → Public**. The code is public already and the images hold no secrets, so the server can pull without logging in. To keep them private instead, make a classic token with only `read:packages` and run `docker login ghcr.io -u christianrazul` once on the server as `deploy`.
 
 ## 4. First deploy
 
-Merge to `main`. The pipeline runs lint, type checks, unit, database, end-to-end, accessibility and security checks, then builds the images. Start the **deploy** job by hand.
+Push or merge to `main`. The CI workflow runs lint, type checks, unit, database, end-to-end, accessibility and security checks, then builds and pushes the images. The **deploy** job then waits: open the run in the **Actions** tab and choose **Review deployments → Approve**. (The very first run pushes the images before you can make them public, so if the deploy fails to pull, make them public and re-run the deploy job.)
 
 On the first start the app finds an empty database and, because the `BOOTSTRAP_*` variables are set, creates the four rate classes, the main branch and the owner's account, then emails the owner a link to set a password. Check the logs:
 
@@ -95,7 +106,7 @@ curl -fsS https://$DOMAIN/api/health
 dc restart app             # restart the app only
 ```
 
-**Updates** go through CI: merge to `main`, then run the deploy job. It pulls the new images, runs `migrate`, and replaces the app. To roll back, re-run the deploy job of an earlier pipeline; migrations are written to be additive, so the previous image keeps working on the newer schema.
+**Updates** go through CI: merge to `main`, then approve the deploy. It pulls the new images, runs `migrate`, and replaces the app. To roll back, run the **Deploy** workflow by hand (**Actions → Deploy → Run workflow**) with an earlier commit's full SHA; migrations are written to be additive, so the previous image keeps working on the newer schema.
 
 **Operating system updates** install themselves (`unattended-upgrades`). Reboot during a quiet hour when `/var/run/reboot-required` exists; every service restarts on its own.
 
@@ -127,4 +138,4 @@ dc start app jobs
 - The app container runs as `node`, read-only, with every Linux capability dropped and `no-new-privileges`.
 - Logs are capped at 5 × 10 MB per service. Paths in access logs contain record ids, never names.
 - The daily job endpoint needs `CRON_SECRET`; health checks say only "ok" or "down".
-- Secrets live only in `/srv/crb-ot-clinic/.env` (mode 600) and GitLab's protected variables; images contain none.
+- Secrets live only in `/srv/crb-ot-clinic/.env` (mode 600) and the `production` environment secret on GitHub; images contain none.

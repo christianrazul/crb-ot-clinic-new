@@ -1,6 +1,6 @@
 # Production stack for one VPS. See docs/deploy.md.
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d
-# Images come from the GitLab registry (APP_IMAGE, APP_TAG); only Caddy's
+# Images come from the GitHub Container Registry (APP_IMAGE, APP_TAG); only Caddy's
 # ports are published. The database is reachable only inside the stack.
 name: crb-ot-clinic
 

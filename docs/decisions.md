@@ -619,4 +619,8 @@ The `jobs` container runs busybox crond and calls `POST /api/jobs/materialize` w
 
 ### D-108: CI release and deploy
 
-On the default branch, `images` builds the runner and migrate targets with Docker-in-Docker and pushes both, tagged with the commit SHA and `latest`, to the GitLab registry. `deploy` is manual and protected: it copies the compose file and `deploy/` to the server over SSH (host key pinned with `DEPLOY_KNOWN_HOSTS`), sets `APP_TAG` to the commit, pulls, `up -d`, and checks `/api/health` over HTTPS.
+On `main`, once every check passes, `images` builds the runner and migrate targets with Buildx and pushes both, tagged with the commit SHA and `latest`, to the GitHub Container Registry using the workflow's own token. `deploy` runs in the `production` environment, which requires the owner's approval: it copies the compose file and `deploy/` to the server over SSH (host key pinned with `DEPLOY_KNOWN_HOSTS`), sets `APP_TAG` to the commit, pulls, `up -d`, and polls `/api/health` over HTTPS. The same workflow can be run by hand with an earlier SHA to roll back.
+
+### D-109: GitHub Actions instead of GitLab CI
+
+The repository lives on GitHub, so the pipeline moved from `.gitlab-ci.yml` to `.github/workflows/` with the same jobs. Every third-party action is pinned to a full commit SHA (with its version in a comment), each release at least two weeks old, and workflows get read-only tokens except `images` (`packages: write`). Semgrep runs with `docker run` because GitHub's JavaScript actions cannot run inside its Alpine-based image. The deploy SSH key is an environment secret, available only to jobs that passed the approval.
