@@ -36,9 +36,10 @@ describe("rates and splits", () => {
   it("a rate change leaves past payroll exactly as it was", () =>
     inRollback(async (tx) => {
       const before = await payrollTotal(tx);
-      await updateRateClasses(tx, ACTORS.owner, [
-        { id: "rc_ot", ratePesos: 900, therapistSharePct: 60 },
-      ]);
+      await updateRateClasses(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        rows: [{ id: "rc_ot", ratePesos: 900, therapistSharePct: 60 }],
+      });
       expect(await payrollTotal(tx)).toBe(before);
 
       // Sessions marked attended after the change use the new snapshot.
@@ -61,16 +62,20 @@ describe("rates and splits", () => {
   it("rejects shares over 100%", () =>
     inRollback(async (tx) => {
       await expect(
-        updateRateClasses(tx, ACTORS.owner, [
-          { id: "rc_ot", ratePesos: 700, therapistSharePct: 120 },
-        ]),
+        updateRateClasses(tx, ACTORS.owner, {
+          branchId: "br_bangkal",
+          rows: [{ id: "rc_ot", ratePesos: 700, therapistSharePct: 120 }],
+        }),
       ).rejects.toThrow(/0 to 100/);
     }));
 
   it("only the owner manages settings", () =>
     inRollback(async (tx) => {
       await expect(
-        updateRateClasses(tx, ACTORS.desk, [{ id: "rc_ot", ratePesos: 1, therapistSharePct: 1 }]),
+        updateRateClasses(tx, ACTORS.desk, {
+          branchId: "br_bangkal",
+          rows: [{ id: "rc_ot", ratePesos: 1, therapistSharePct: 1 }],
+        }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
         createBranch(tx, ACTORS.therapist, { name: "CRB Toril" }),
@@ -81,7 +86,11 @@ describe("rates and splits", () => {
 describe("session types", () => {
   it("a new default fee never changes booked sessions", () =>
     inRollback(async (tx) => {
-      await updateSessionTypeRate(tx, ACTORS.owner, { id: "st_ot", ratePesos: 800 });
+      await updateSessionTypeRate(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id: "st_ot",
+        ratePesos: 800,
+      });
       const [booked] = await tx
         .select()
         .from(appointments)
@@ -92,17 +101,23 @@ describe("session types", () => {
   it("adds, removes (soft) and restores a type", () =>
     inRollback(async (tx) => {
       const id = await createSessionType(tx, ACTORS.owner, {
-        name: "OT group session",
-        ratePesos: 400,
+        branchId: "br_bangkal",
+        values: { name: "OT group session", ratePesos: 400 },
       });
       await expect(
-        createSessionType(tx, ACTORS.owner, { name: "ot group session", ratePesos: 400 }),
+        createSessionType(tx, ACTORS.owner, {
+          branchId: "br_bangkal",
+          values: { name: "ot group session", ratePesos: 400 },
+        }),
       ).rejects.toThrow(/already/);
-      await removeSessionType(tx, ACTORS.owner, { id });
+      await removeSessionType(tx, ACTORS.owner, { branchId: "br_bangkal", id });
       const [removed] = await tx.select().from(sessionTypes).where(eq(sessionTypes.id, id));
       expect(removed!.active).toBe(false);
       expect(
-        await createSessionType(tx, ACTORS.owner, { name: "OT group session", ratePesos: 450 }),
+        await createSessionType(tx, ACTORS.owner, {
+          branchId: "br_bangkal",
+          values: { name: "OT group session", ratePesos: 450 },
+        }),
       ).toBe(id);
     }));
 });

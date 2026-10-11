@@ -35,6 +35,8 @@ export const branches = pgTable(
       .default(sql`'{1,2,3,4,5,6}'`),
     timezone: text().notNull().default("Asia/Manila"),
     receiptPrefix: text().notNull().default("CRB"),
+    /** Flag a patient when their advance credit falls under this. */
+    lowCreditThresholdCentavos: integer().notNull().default(100_000),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -47,22 +49,35 @@ export const branches = pgTable(
   ],
 );
 
-export const rateClasses = pgTable(
-  "rate_classes",
+export const rateClasses = pgTable("rate_classes", {
+  id: id(),
+  name: text().notNull().unique(),
+  shortName: text().notNull(),
+  service: serviceEnum().notNull(),
+  sortOrder: smallint().notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** What each role bills per session at a branch, and the therapist's share of it. */
+export const branchRates = pgTable(
+  "branch_rates",
   {
-    id: id(),
-    name: text().notNull().unique(),
-    shortName: text().notNull(),
-    service: serviceEnum().notNull(),
+    branchId: text()
+      .notNull()
+      .references(() => branches.id),
+    rateClassId: text()
+      .notNull()
+      .references(() => rateClasses.id),
     rateCentavos: integer().notNull(),
     therapistSharePct: smallint().notNull(),
-    sortOrder: smallint().notNull().default(0),
-    createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    check("rate_classes_rate_positive", sql`${t.rateCentavos} >= 0`),
-    check("rate_classes_share_pct", sql`${t.therapistSharePct} between 0 and 100`),
+    primaryKey({ columns: [t.branchId, t.rateClassId] }),
+    index().on(t.rateClassId),
+    check("branch_rates_rate_positive", sql`${t.rateCentavos} >= 0`),
+    check("branch_rates_share_pct", sql`${t.therapistSharePct} between 0 and 100`),
   ],
 );
 
@@ -96,7 +111,11 @@ export const sessionTypes = pgTable(
   "session_types",
   {
     id: id(),
-    name: text().notNull().unique(),
+    /** Each branch keeps its own list and prices. */
+    branchId: text()
+      .notNull()
+      .references(() => branches.id),
+    name: text().notNull(),
     /** Null for uncategorized types such as make up sessions. */
     service: patientServiceEnum(),
     rateCentavos: integer().notNull(),
@@ -107,7 +126,10 @@ export const sessionTypes = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [check("session_types_rate_positive", sql`${t.rateCentavos} >= 0`)],
+  (t) => [
+    uniqueIndex("session_types_branch_name").on(t.branchId, t.name),
+    check("session_types_rate_positive", sql`${t.rateCentavos} >= 0`),
+  ],
 );
 
 export const sessionTypeRateClasses = pgTable(
@@ -195,7 +217,6 @@ export const clinicSettings = pgTable(
   "clinic_settings",
   {
     id: text().primaryKey().default("clinic"),
-    lowCreditThresholdCentavos: integer().notNull().default(100_000),
     updatedAt: updatedAt(),
   },
   (t) => [check("clinic_settings_singleton", sql`${t.id} = 'clinic'`)],

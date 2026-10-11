@@ -25,7 +25,7 @@ export async function loadSettingsPage(session: ShellSession) {
     .where(and(eq(patients.branchId, session.branch.id), isNull(patients.deletedAt)))
     .orderBy(asc(patients.firstName), asc(patients.lastName));
   const branch = settings.branches.find((b) => b.id === session.branch.id)!;
-  const lowCreditThresholdCentavos = await lowCreditThreshold(db);
+  const lowCreditThresholdCentavos = await lowCreditThreshold(db, session.branch.id);
   const team = await listTeam(db, session.actor);
   return { ...settings, patients: patientRows, branch, lowCreditThresholdCentavos, team };
 }

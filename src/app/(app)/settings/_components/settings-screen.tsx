@@ -32,16 +32,24 @@ const SECTIONS: {
   key: string;
   label: string;
   icon: LucideIcon;
+  /** Branch settings apply to the branch picked in the sidebar; clinic settings to all. */
+  scope: "branch" | "clinic";
   Body: (props: { data: SettingsPageData }) => React.ReactNode;
 }[] = [
-  { key: "rates", label: "Rates and splits", icon: Percent, Body: RatesSection },
-  { key: "sessions", label: "Session types", icon: Layers, Body: SessionTypesSection },
-  { key: "staff", label: "Staff", icon: Users, Body: StaffSection },
-  { key: "team", label: "Team accounts", icon: ShieldCheck, Body: TeamSection },
-  { key: "patients", label: "Patients", icon: UserRound, Body: PatientsSection },
-  { key: "branches", label: "Branches", icon: Building2, Body: BranchesSection },
-  { key: "hours", label: "Operating hours", icon: Clock3, Body: HoursSection },
-  { key: "audit", label: "Audit log", icon: ScrollText, Body: AuditSection },
+  { key: "rates", label: "Rates and splits", icon: Percent, scope: "branch", Body: RatesSection },
+  {
+    key: "sessions",
+    label: "Session types",
+    icon: Layers,
+    scope: "branch",
+    Body: SessionTypesSection,
+  },
+  { key: "staff", label: "Staff", icon: Users, scope: "branch", Body: StaffSection },
+  { key: "team", label: "Team accounts", icon: ShieldCheck, scope: "clinic", Body: TeamSection },
+  { key: "patients", label: "Patients", icon: UserRound, scope: "branch", Body: PatientsSection },
+  { key: "branches", label: "Branches", icon: Building2, scope: "clinic", Body: BranchesSection },
+  { key: "hours", label: "Operating hours", icon: Clock3, scope: "branch", Body: HoursSection },
+  { key: "audit", label: "Audit log", icon: ScrollText, scope: "clinic", Body: AuditSection },
 ];
 
 export function SettingsScreen({ data }: { data: SettingsPageData }) {
@@ -52,7 +60,14 @@ export function SettingsScreen({ data }: { data: SettingsPageData }) {
 
   return (
     <Page>
-      <PageHeader title="Settings" description="Clinic-wide rates, people and locations." />
+      <PageHeader
+        title="Settings"
+        description={
+          active.scope === "branch"
+            ? `For ${data.branch.name}. Switch branch in the sidebar to change another branch.`
+            : "For the whole clinic, across every branch."
+        }
+      />
       <Separator />
       <div className="flex flex-col gap-6 lg:flex-row">
         <nav
@@ -80,7 +95,8 @@ export function SettingsScreen({ data }: { data: SettingsPageData }) {
           })}
         </nav>
         <div className="min-w-0 flex-1 lg:max-w-4xl">
-          <active.Body data={data} />
+          {/* Remount on branch switch, so no form keeps another branch's values. */}
+          <active.Body key={data.branch.id} data={data} />
         </div>
       </div>
     </Page>

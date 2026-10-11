@@ -5,12 +5,7 @@ import { z } from "zod";
 
 import { runAction } from "@/server/actions/run-action";
 import { getCreditLedger } from "@/server/services/billing";
-import {
-  collectPayment,
-  getPaymentContext,
-  recordTopUp,
-  setLowCreditThreshold,
-} from "@/server/services/payments";
+import { collectPayment, getPaymentContext, recordTopUp } from "@/server/services/payments";
 
 const id = z.string().min(1).max(64);
 const refreshed = <T extends { ok: boolean }>(result: T) => {
@@ -38,12 +33,4 @@ export async function getCreditBalanceAction(patientId: unknown) {
 
 export async function recordTopUpAction(input: unknown) {
   return refreshed(await runAction(({ db, actor }) => recordTopUp(db, actor, input)));
-}
-
-export async function setLowCreditThresholdAction(pesos: unknown) {
-  return refreshed(
-    await runAction(({ db, actor }) =>
-      setLowCreditThreshold(db, actor, z.number().int().min(0).parse(pesos) * 100),
-    ),
-  );
 }

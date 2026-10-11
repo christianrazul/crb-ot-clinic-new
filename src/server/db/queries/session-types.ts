@@ -1,6 +1,6 @@
 import "server-only";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
 import { sessionTypeRateClasses, sessionTypes } from "../schema";
@@ -10,18 +10,32 @@ export type SessionTypeRow = typeof sessionTypes.$inferSelect & {
   allowedRateClassIds: string[] | null;
 };
 
+/** One branch's session types, with the roles allowed to run each. */
 export async function listSessionTypes(
   db: DbExecutor,
-  options: { includeInactive?: boolean } = {},
+  options: { branchId: string; includeInactive?: boolean },
 ) {
-  const [types, links] = await Promise.all([
-    db
-      .select()
-      .from(sessionTypes)
-      .where(options.includeInactive ? undefined : eq(sessionTypes.active, true))
-      .orderBy(asc(sessionTypes.sortOrder), asc(sessionTypes.name)),
-    db.select().from(sessionTypeRateClasses),
-  ]);
+  const types = await db
+    .select()
+    .from(sessionTypes)
+    .where(
+      and(
+        eq(sessionTypes.branchId, options.branchId),
+        options.includeInactive ? undefined : eq(sessionTypes.active, true),
+      ),
+    )
+    .orderBy(asc(sessionTypes.sortOrder), asc(sessionTypes.name));
+  const links = types.length
+    ? await db
+        .select()
+        .from(sessionTypeRateClasses)
+        .where(
+          inArray(
+            sessionTypeRateClasses.sessionTypeId,
+            types.map((t) => t.id),
+          ),
+        )
+    : [];
   return types.map((type): SessionTypeRow => ({
     ...type,
     allowedRateClassIds: type.anyRateClass

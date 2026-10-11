@@ -21,6 +21,7 @@ const TABLES = [
   "session_type_rate_classes",
   "session_types",
   "staff",
+  "branch_rates",
   "rate_classes",
   "receipt_counters",
   "expenses",
@@ -64,6 +65,7 @@ export async function seed(db: Database, options: { password?: string } = {}) {
     );
     await tx.insert(t.userBranches).values(rows.userBranches);
     await tx.insert(t.rateClasses).values(rows.rateClasses);
+    await tx.insert(t.branchRates).values(rows.branchRates);
     await tx.insert(t.staff).values(rows.staff);
     await tx.insert(t.sessionTypes).values(rows.sessionTypes);
     await tx.insert(t.sessionTypeRateClasses).values(rows.sessionTypeRateClasses);

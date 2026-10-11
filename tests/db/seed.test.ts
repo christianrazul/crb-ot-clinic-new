@@ -16,7 +16,9 @@ describe("seed", () => {
     expect(await total(t.patients)).toBe(16);
     expect(await total(t.guardians)).toBe(16);
     expect(await total(t.rateClasses)).toBe(4);
-    expect(await total(t.sessionTypes)).toBe(5);
+    // Five per branch: Bangkal and Panabo each keep their own list.
+    expect(await total(t.sessionTypes)).toBe(10);
+    expect(await total(t.branchRates)).toBe(8);
     expect(await total(t.users)).toBe(3);
   });
 

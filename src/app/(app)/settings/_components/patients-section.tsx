@@ -71,7 +71,7 @@ export function PatientsSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Patients"
-        description="Add patients and switch them between active and inactive."
+        description={`Add patients at ${data.branch.name} and switch them between active and inactive.`}
       >
         {!open && (
           <Button size="sm" onClick={() => setOpen(true)}>

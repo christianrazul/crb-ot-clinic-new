@@ -14,6 +14,7 @@ import { assertCan, ForbiddenError } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
+import { rateAt } from "@/server/db/queries/rates";
 import {
   appointments,
   branches,
@@ -348,11 +349,12 @@ export async function getMyDay(db: DbExecutor, actor: Actor) {
     const day = Number(toManilaIsoDate(r.startsAt).slice(8, 10));
     weeks[Math.min(4, Math.floor((day - 1) / 7))]!.amount += share;
   }
-  const [rate] = await db
-    .select({ share: rateClasses.therapistSharePct })
+  const [member] = await db
+    .select({ branchId: staff.branchId, rateClassId: staff.rateClassId })
     .from(staff)
-    .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
     .where(eq(staff.id, actor.staffId));
+  const branchRate = member ? await rateAt(db, member.branchId, member.rateClassId) : null;
+  const rate = branchRate ? { share: branchRate.share } : undefined;
 
   return {
     today,

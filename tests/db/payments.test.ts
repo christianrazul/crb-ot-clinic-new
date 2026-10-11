@@ -184,10 +184,10 @@ describe("billing day and low credit", () => {
       const notes = await getNotifications(tx, ACTORS.desk, "br_bangkal");
       expect(notes.some((n) => n.kind === "low_credit")).toBe(true);
 
-      await expect(setLowCreditThreshold(tx, ACTORS.desk, 500_000)).rejects.toBeInstanceOf(
-        ForbiddenError,
-      );
-      await setLowCreditThreshold(tx, ACTORS.owner, 500_000);
+      await expect(
+        setLowCreditThreshold(tx, ACTORS.desk, { branchId: "br_bangkal", value: 500_000 }),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      await setLowCreditThreshold(tx, ACTORS.owner, { branchId: "br_bangkal", value: 500_000 });
       const raised = await lowCreditPatients(tx, "br_bangkal");
       expect(raised.patients.map((p) => p.patientId).sort()).toEqual([
         "pat_01",

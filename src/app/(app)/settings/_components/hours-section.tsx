@@ -43,7 +43,7 @@ export function HoursSection({ data }: { data: SettingsPageData }) {
 
   const save = () =>
     startTransition(async () => {
-      const result = await saveHoursAction({
+      const result = await saveHoursAction(branch.id, {
         openDays: days.map(Number),
         opensAtHour: Number(opens),
         closesAtHour: Number(closes),

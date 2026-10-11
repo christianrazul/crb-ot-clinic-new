@@ -196,7 +196,7 @@ export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: 
   assertCan(actor, "appointment:book", { branchId });
   const branch = await branchOrThrow(db, branchId);
   const [types, staffRows] = await Promise.all([
-    listSessionTypes(db),
+    listSessionTypes(db, { branchId }),
     db
       .select({
         id: staff.id,
@@ -250,7 +250,8 @@ export async function bookAppointment(
   assertCan(actor, "appointment:book", { branchId: input.branchId });
   const v = bookingInput.parse(input.values);
   const branch = await branchOrThrow(db, input.branchId);
-  const [type] = await listSessionTypes(db).then((all) =>
+  // Only this branch's session types can be booked here.
+  const [type] = await listSessionTypes(db, { branchId: input.branchId }).then((all) =>
     all.filter((t) => t.id === v.sessionTypeId),
   );
   if (!type) throw new ValidationError("That session type is no longer offered. Pick another.");

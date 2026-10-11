@@ -36,9 +36,10 @@ describe("payroll", () => {
 
   it("keeps past sessions at their old rate after a rate change", () =>
     inRollback(async (tx) => {
-      await updateRateClasses(tx, ACTORS.owner, [
-        { id: "rc_ot", ratePesos: 900, therapistSharePct: 60 },
-      ]);
+      await updateRateClasses(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        rows: [{ id: "rc_ot", ratePesos: 900, therapistSharePct: 60 }],
+      });
       await setAppointmentStatus(tx, ACTORS.desk, {
         appointmentId: "apt_20260822_11_delarosa",
         status: "attended",

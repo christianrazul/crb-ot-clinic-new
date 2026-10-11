@@ -32,7 +32,10 @@ export function BranchesSection({ data }: { data: SettingsPageData }) {
 
   return (
     <>
-      <SectionHead title="Branches" description="Locations shown in the branch switcher.">
+      <SectionHead
+        title="Branches"
+        description="Locations shown in the branch switcher. A new branch starts with a copy of the main branch's rates, session types and hours."
+      >
         {!open && (
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus /> Add branch

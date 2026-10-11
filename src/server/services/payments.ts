@@ -21,7 +21,7 @@ import { owedByPatient } from "@/server/db/queries/balances";
 import { creditBalance, takeReceiptNumber } from "@/server/db/queries/billing";
 import {
   appointments,
-  clinicSettings,
+  branches,
   creditLedger,
   patients,
   payments,
@@ -39,24 +39,32 @@ function serviceOf(typeService: ServiceKey | null, rateService: ServiceKey): Ser
   return rateService === "aide" ? "aide" : typeService;
 }
 
-export async function lowCreditThreshold(db: DbExecutor) {
-  const [row] = await db.select().from(clinicSettings).where(eq(clinicSettings.id, "clinic"));
-  return row?.lowCreditThresholdCentavos ?? 100_000;
+/** The branch's low-credit reminder amount. */
+export async function lowCreditThreshold(db: DbExecutor, branchId: string) {
+  const [row] = await db
+    .select({ value: branches.lowCreditThresholdCentavos })
+    .from(branches)
+    .where(eq(branches.id, branchId));
+  return row?.value ?? 100_000;
 }
 
-export async function setLowCreditThreshold(db: DbExecutor, actor: Actor, raw: unknown) {
-  assertCan(actor, "settings:manage");
-  const value = lowCreditThresholdInput.parse(raw);
-  const before = await lowCreditThreshold(db);
+export async function setLowCreditThreshold(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; value: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const value = lowCreditThresholdInput.parse(input.value);
+  const before = await lowCreditThreshold(db, input.branchId);
   await db
-    .insert(clinicSettings)
-    .values({ id: "clinic", lowCreditThresholdCentavos: value })
-    .onConflictDoUpdate({ target: clinicSettings.id, set: { lowCreditThresholdCentavos: value } });
+    .update(branches)
+    .set({ lowCreditThresholdCentavos: value })
+    .where(eq(branches.id, input.branchId));
   await writeAudit(db, {
     actorUserId: actor.userId,
     action: "settings.low_credit_threshold",
-    entity: "clinic_settings",
-    entityId: "clinic",
+    entity: "branch",
+    entityId: input.branchId,
     before: { value: before },
     after: { value },
     ip: actor.ip,
@@ -305,7 +313,7 @@ export async function collectPayment(db: DbExecutor, actor: Actor, raw: unknown)
     ip: actor.ip,
   });
   const balanceAfter = balance - quote.creditAppliedCentavos;
-  const threshold = await lowCreditThreshold(db);
+  const threshold = await lowCreditThreshold(db, appointment.branchId);
   return {
     receiptNo,
     methodLabel: quote.methodLabel,
@@ -358,7 +366,7 @@ export async function recordTopUp(db: DbExecutor, actor: Actor, raw: unknown) {
 
 /** Patients whose credit is above zero but under the reminder threshold. */
 export async function lowCreditPatients(db: DbExecutor, branchId: string) {
-  const threshold = await lowCreditThreshold(db);
+  const threshold = await lowCreditThreshold(db, branchId);
   const rows = await db
     .select({
       patientId: creditLedger.patientId,

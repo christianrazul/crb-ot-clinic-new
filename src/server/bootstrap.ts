@@ -8,6 +8,7 @@ import type { Database } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
 import {
   accounts,
+  branchRates,
   branches,
   clinicSettings,
   rateClasses,
@@ -39,7 +40,15 @@ export async function bootstrapClinic(db: Database, input: BootstrapInput) {
 
     await tx
       .insert(rateClasses)
-      .values(RATE_CLASSES.map((r, index) => ({ ...r, sortOrder: index })))
+      .values(
+        RATE_CLASSES.map((r, index) => ({
+          id: r.id,
+          name: r.name,
+          shortName: r.shortName,
+          service: r.service,
+          sortOrder: index,
+        })),
+      )
       .onConflictDoNothing();
     await tx.insert(clinicSettings).values({ id: "clinic" }).onConflictDoNothing();
     const [branch] = await tx
@@ -53,6 +62,14 @@ export async function bootstrapClinic(db: Database, input: BootstrapInput) {
       })
       .returning();
     await tx.insert(receiptCounters).values({ branchId: branch!.id, nextNumber: 1 });
+    await tx.insert(branchRates).values(
+      RATE_CLASSES.map((r) => ({
+        branchId: branch!.id,
+        rateClassId: r.id,
+        rateCentavos: r.rateCentavos,
+        therapistSharePct: r.therapistSharePct,
+      })),
+    );
 
     const userId = crypto.randomUUID();
     const email = input.ownerEmail.trim().toLowerCase();

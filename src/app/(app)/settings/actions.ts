@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { runAction } from "@/server/actions/run-action";
+import { type ActionResult, runAction } from "@/server/actions/run-action";
 import { type InviteResult, sendInvite } from "@/server/auth/invites";
 import { auditEntities, listAuditLog } from "@/server/services/audit";
 import {
@@ -23,7 +23,8 @@ import {
   setAccountActive,
   updateAccount,
 } from "@/server/services/users";
-import { currentBranchId } from "@/server/session/shell";
+import { setLowCreditThreshold } from "@/server/services/payments";
+import { getShellSession } from "@/server/session/shell";
 
 const id = z.string().min(1).max(64);
 const done = <T extends { ok: boolean }>(result: T) => {
@@ -31,34 +32,87 @@ const done = <T extends { ok: boolean }>(result: T) => {
   return result;
 };
 
-export async function saveRatesAction(rows: unknown) {
-  return done(await runAction(({ db, actor }) => updateRateClasses(db, actor, rows)));
+/**
+ * Branch-scoped settings are saved to the branch the form was loaded for, and
+ * only if that is still the branch this person is working in. Switching
+ * branches in another tab would otherwise save one branch's form into another.
+ */
+async function inBranch<T>(
+  expected: unknown,
+  work: (branchId: string) => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  const session = await getShellSession();
+  if (id.safeParse(expected).data !== session.branch.id) {
+    return {
+      ok: false,
+      error: `You've switched to ${session.branch.name} since this page loaded. Reload to edit ${session.branch.name}'s settings.`,
+    };
+  }
+  return work(session.branch.id);
 }
 
-export async function addSessionTypeAction(values: unknown) {
-  return done(await runAction(({ db, actor }) => createSessionType(db, actor, values)));
-}
-
-export async function updateSessionTypeRateAction(sessionTypeId: unknown, ratePesos: unknown) {
-  return done(
-    await runAction(({ db, actor }) =>
-      updateSessionTypeRate(db, actor, { id: id.parse(sessionTypeId), ratePesos }),
+export async function saveRatesAction(branchId: unknown, rows: unknown) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) => updateRateClasses(db, actor, { branchId: branch, rows })),
     ),
   );
 }
 
-export async function removeSessionTypeAction(sessionTypeId: unknown) {
-  return done(
-    await runAction(({ db, actor }) =>
-      removeSessionType(db, actor, { id: id.parse(sessionTypeId) }),
+export async function setLowCreditThresholdAction(branchId: unknown, pesos: unknown) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        setLowCreditThreshold(db, actor, {
+          branchId: branch,
+          value: z.number().int().min(0).parse(pesos) * 100,
+        }),
+      ),
     ),
   );
 }
 
-export async function addStaffAction(values: unknown) {
-  const branchId = await currentBranchId();
-  const result = done(
-    await runAction(({ db, actor }) => createStaff(db, actor, { branchId, values })),
+export async function addSessionTypeAction(branchId: unknown, values: unknown) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        createSessionType(db, actor, { branchId: branch, values }),
+      ),
+    ),
+  );
+}
+
+export async function updateSessionTypeRateAction(
+  branchId: unknown,
+  sessionTypeId: unknown,
+  ratePesos: unknown,
+) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        updateSessionTypeRate(db, actor, {
+          branchId: branch,
+          id: id.parse(sessionTypeId),
+          ratePesos,
+        }),
+      ),
+    ),
+  );
+}
+
+export async function removeSessionTypeAction(branchId: unknown, sessionTypeId: unknown) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        removeSessionType(db, actor, { branchId: branch, id: id.parse(sessionTypeId) }),
+      ),
+    ),
+  );
+}
+
+export async function addStaffAction(branchId: unknown, values: unknown) {
+  const result = await inBranch(branchId, async (branch) =>
+    done(await runAction(({ db, actor }) => createStaff(db, actor, { branchId: branch, values }))),
   );
   if (!result.ok) return result;
   // After the transaction commits: email the new user a link to set their password.
@@ -117,10 +171,13 @@ export async function addBranchAction(values: unknown) {
   return result.ok ? { ok: true as const, data: { name: result.data.name } } : result;
 }
 
-export async function saveHoursAction(values: unknown) {
-  const branchId = await currentBranchId();
-  return done(
-    await runAction(({ db, actor }) => updateBranchHours(db, actor, { branchId, values })),
+export async function saveHoursAction(branchId: unknown, values: unknown) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        updateBranchHours(db, actor, { branchId: branch, values }),
+      ),
+    ),
   );
 }
 

@@ -30,7 +30,17 @@ import {
 import { AddForm, digitsOnly } from "./add-form";
 
 /** Rate field that saves when it loses focus, not on every keystroke. */
-function RateField({ id, name, rateCentavos }: { id: string; name: string; rateCentavos: number }) {
+function RateField({
+  branchId,
+  id,
+  name,
+  rateCentavos,
+}: {
+  branchId: string;
+  id: string;
+  name: string;
+  rateCentavos: number;
+}) {
   const [value, setValue] = React.useState(String(rateCentavos / 100));
   const [, startTransition] = React.useTransition();
   return (
@@ -45,7 +55,7 @@ function RateField({ id, name, rateCentavos }: { id: string; name: string; rateC
       onBlur={() => {
         if (Number(value || 0) * 100 === rateCentavos) return;
         startTransition(async () => {
-          const result = await updateSessionTypeRateAction(id, Number(value || 0));
+          const result = await updateSessionTypeRateAction(branchId, id, Number(value || 0));
           if (result.ok)
             toast.success(`${name} rate saved`, { description: "Applies to new bookings." });
           else toast.error(result.error);
@@ -65,7 +75,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Session types"
-        description="Types offered at the desk and their default fee."
+        description={`Types the desk at ${data.branch.name} can book, and their default fee.`}
       >
         {!open && (
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -81,7 +91,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
           onSubmit={() =>
             startTransition(async () => {
               const trimmed = name.trim();
-              const result = await addSessionTypeAction({
+              const result = await addSessionTypeAction(data.branch.id, {
                 name: trimmed,
                 ratePesos: Number(rate || 0),
               });
@@ -138,6 +148,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
                   <TableCell>
                     <RateField
                       key={type.rateCentavos}
+                      branchId={data.branch.id}
                       id={type.id}
                       name={type.name}
                       rateCentavos={type.rateCentavos}
@@ -154,7 +165,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
                           aria-label={`Remove ${type.name}`}
                           onClick={() =>
                             startTransition(async () => {
-                              const result = await removeSessionTypeAction(type.id);
+                              const result = await removeSessionTypeAction(data.branch.id, type.id);
                               if (result.ok)
                                 toast.success(`${type.name} removed`, {
                                   description: "Past sessions of this type keep it.",

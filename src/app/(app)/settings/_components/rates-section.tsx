@@ -22,9 +22,7 @@ import { payrollLine } from "@/lib/payroll";
 import { SERVICE_BG } from "@/lib/services";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
 
-import { setLowCreditThresholdAction } from "@/app/(app)/billing/actions";
-
-import { saveRatesAction } from "../actions";
+import { saveRatesAction, setLowCreditThresholdAction } from "../actions";
 import { digitsOnly } from "./add-form";
 
 export function RatesSection({ data }: { data: SettingsPageData }) {
@@ -41,6 +39,7 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
   const save = () =>
     startTransition(async () => {
       const result = await saveRatesAction(
+        data.branch.id,
         data.rateClasses.map((r) => ({
           id: r.id,
           ratePesos: Number(draft[r.id]!.pesos || 0),
@@ -58,7 +57,7 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Rates and splits"
-        description="What each role bills per session and how the fee is divided."
+        description={`What each role bills per session at ${data.branch.name}, and how the fee is divided.`}
       >
         <Button size="sm" onClick={save} disabled={pending}>
           Save changes
@@ -140,17 +139,29 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
           </TableBody>
         </Table>
       </Card>
-      <LowCreditCard thresholdCentavos={data.lowCreditThresholdCentavos} />
+      <LowCreditCard
+        branchId={data.branch.id}
+        branchName={data.branch.name}
+        thresholdCentavos={data.lowCreditThresholdCentavos}
+      />
     </>
   );
 }
 
-function LowCreditCard({ thresholdCentavos }: { thresholdCentavos: number }) {
+function LowCreditCard({
+  branchId,
+  branchName,
+  thresholdCentavos,
+}: {
+  branchId: string;
+  branchName: string;
+  thresholdCentavos: number;
+}) {
   const [pending, startTransition] = React.useTransition();
   const [pesos, setPesos] = React.useState(String(thresholdCentavos / 100));
   const save = () =>
     startTransition(async () => {
-      const result = await setLowCreditThresholdAction(Number(pesos || 0));
+      const result = await setLowCreditThresholdAction(branchId, Number(pesos || 0));
       if (result.ok)
         toast.success("Reminder saved", {
           description: `Guardians get flagged when credit drops under ${formatPeso(Number(pesos || 0) * 100)}.`,
@@ -162,7 +173,7 @@ function LowCreditCard({ thresholdCentavos }: { thresholdCentavos: number }) {
       <div className="grid min-w-0 flex-1 gap-1.5">
         <Label htmlFor="low-credit">Low credit reminder</Label>
         <p className="text-xs text-muted-foreground">
-          Flag a patient when their advance credit falls under this amount.
+          Flag a patient at {branchName} when their advance credit falls under this amount.
         </p>
       </div>
       <InputGroup

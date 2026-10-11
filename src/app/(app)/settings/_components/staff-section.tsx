@@ -82,7 +82,7 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Staff"
-        description="Therapists, aides and tutors, with their load this month."
+        description={`Therapists, aides and tutors at ${data.branch.name}, with their load this month.`}
       >
         {!open && (
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -98,7 +98,7 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
           onSubmit={() =>
             startTransition(async () => {
               const trimmed = name.trim();
-              const result = await addStaffAction({
+              const result = await addStaffAction(data.branch.id, {
                 displayName: trimmed,
                 rateClassId,
                 loginEmail: email.trim(),

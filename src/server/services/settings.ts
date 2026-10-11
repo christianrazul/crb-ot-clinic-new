@@ -1,6 +1,19 @@
 import "server-only";
 
-import { and, asc, count, countDistinct, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  sql,
+} from "drizzle-orm";
 
 import { fromManilaLocal, manilaWeekday } from "@/lib/dates";
 import {
@@ -16,12 +29,15 @@ import { assertCan } from "@/server/auth/permissions";
 import { clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
+import { ratesForBranch } from "@/server/db/queries/rates";
 import { listSessionTypes } from "@/server/db/queries/session-types";
 import {
   appointments,
+  branchRates,
   branches,
   rateClasses,
   receiptCounters,
+  sessionTypeRateClasses,
   sessionTypes,
   staff,
   userBranches,
@@ -104,8 +120,8 @@ export async function staffWithLoad(db: DbExecutor, branchId: string) {
 export async function loadSettings(db: DbExecutor, actor: Actor, branchId: string) {
   assertCan(actor, "settings:manage", { branchId });
   const [rates, types, staffRows, branchRows] = await Promise.all([
-    db.select().from(rateClasses).orderBy(asc(rateClasses.sortOrder)),
-    listSessionTypes(db),
+    ratesForBranch(db, branchId),
+    listSessionTypes(db, { branchId }),
     staffWithLoad(db, branchId),
     db
       .select()
@@ -116,22 +132,29 @@ export async function loadSettings(db: DbExecutor, actor: Actor, branchId: strin
   return { rateClasses: rates, sessionTypes: types, staff: staffRows, branches: branchRows };
 }
 
+/** A session type for editing, which must belong to the branch being edited. */
+async function sessionTypeIn(db: DbExecutor, actor: Actor, id: string, branchId: string) {
+  assertCan(actor, "settings:manage", { branchId });
+  const [type] = await db.select().from(sessionTypes).where(eq(sessionTypes.id, id));
+  if (!type || type.branchId !== branchId) {
+    throw new NotFoundError("That session type isn't at this branch. Reload the page.");
+  }
+  return type;
+}
+
 /**
- * New rates and splits apply to sessions marked attended from now on.
- * Attended sessions keep their payroll snapshot, so past payroll never changes.
+ * New rates and splits for one branch. They apply to sessions marked attended
+ * from now on; attended sessions keep their payroll snapshot, so past payroll
+ * never changes.
  */
-export async function updateRateClasses(db: DbExecutor, actor: Actor, raw: unknown) {
-  assertCan(actor, "settings:manage");
-  const rows = rateClassesInput.parse(raw);
-  const current = await db
-    .select()
-    .from(rateClasses)
-    .where(
-      inArray(
-        rateClasses.id,
-        rows.map((r) => r.id),
-      ),
-    );
+export async function updateRateClasses(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; rows: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const rows = rateClassesInput.parse(input.rows);
+  const current = await ratesForBranch(db, input.branchId);
   for (const row of rows) {
     const before = current.find((c) => c.id === row.id);
     if (!before) throw new NotFoundError("That role no longer exists. Reload the page.");
@@ -139,54 +162,78 @@ export async function updateRateClasses(db: DbExecutor, actor: Actor, raw: unkno
     if (before.rateCentavos === rateCentavos && before.therapistSharePct === row.therapistSharePct)
       continue;
     await db
-      .update(rateClasses)
-      .set({ rateCentavos, therapistSharePct: row.therapistSharePct })
-      .where(eq(rateClasses.id, row.id));
+      .insert(branchRates)
+      .values({
+        branchId: input.branchId,
+        rateClassId: row.id,
+        rateCentavos,
+        therapistSharePct: row.therapistSharePct,
+      })
+      .onConflictDoUpdate({
+        target: [branchRates.branchId, branchRates.rateClassId],
+        set: { rateCentavos, therapistSharePct: row.therapistSharePct, updatedAt: new Date() },
+      });
     await writeAudit(db, {
       actorUserId: actor.userId,
       action: "rate_class.update",
       entity: "rate_class",
       entityId: row.id,
-      before: { rateCentavos: before.rateCentavos, therapistSharePct: before.therapistSharePct },
-      after: { rateCentavos, therapistSharePct: row.therapistSharePct },
+      before: {
+        branchId: input.branchId,
+        rateCentavos: before.rateCentavos,
+        therapistSharePct: before.therapistSharePct,
+      },
+      after: { branchId: input.branchId, rateCentavos, therapistSharePct: row.therapistSharePct },
       ip: actor.ip,
     });
   }
 }
 
-export async function createSessionType(db: DbExecutor, actor: Actor, raw: unknown) {
-  assertCan(actor, "settings:manage");
-  const input = sessionTypeInput.parse(raw);
+/** Adds a session type to one branch (or brings back one removed there). */
+export async function createSessionType(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; values: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const values = sessionTypeInput.parse(input.values);
   const [existing] = await db
     .select()
     .from(sessionTypes)
-    .where(eq(sql`lower(${sessionTypes.name})`, input.name.toLowerCase()));
+    .where(
+      and(
+        eq(sessionTypes.branchId, input.branchId),
+        eq(sql`lower(${sessionTypes.name})`, values.name.toLowerCase()),
+      ),
+    );
   if (existing?.active)
     throw new ValidationError(`There is already a session type called ${existing.name}.`);
   if (existing) {
     // Re-adding a removed type brings it back with the new rate.
     await db
       .update(sessionTypes)
-      .set({ active: true, rateCentavos: input.ratePesos * 100 })
+      .set({ active: true, rateCentavos: values.ratePesos * 100 })
       .where(eq(sessionTypes.id, existing.id));
     await writeAudit(db, {
       actorUserId: actor.userId,
       action: "session_type.restore",
       entity: "session_type",
       entityId: existing.id,
-      after: input,
+      after: { branchId: input.branchId, ...values },
       ip: actor.ip,
     });
     return existing.id;
   }
   const [{ max } = { max: 0 }] = await db
     .select({ max: sql<number>`coalesce(max(${sessionTypes.sortOrder}), 0)`.mapWith(Number) })
-    .from(sessionTypes);
+    .from(sessionTypes)
+    .where(eq(sessionTypes.branchId, input.branchId));
   const [created] = await db
     .insert(sessionTypes)
     .values({
-      name: input.name,
-      rateCentavos: input.ratePesos * 100,
+      branchId: input.branchId,
+      name: values.name,
+      rateCentavos: values.ratePesos * 100,
       anyRateClass: true,
       sortOrder: max + 1,
     })
@@ -196,22 +243,20 @@ export async function createSessionType(db: DbExecutor, actor: Actor, raw: unkno
     action: "session_type.create",
     entity: "session_type",
     entityId: created!.id,
-    after: input,
+    after: { branchId: input.branchId, ...values },
     ip: actor.ip,
   });
   return created!.id;
 }
 
-/** A new default fee for future bookings. Booked sessions keep their fee. */
+/** A new default fee for future bookings at this branch. Booked sessions keep their fee. */
 export async function updateSessionTypeRate(
   db: DbExecutor,
   actor: Actor,
-  input: { id: string; ratePesos: unknown },
+  input: { branchId: string; id: string; ratePesos: unknown },
 ) {
-  assertCan(actor, "settings:manage");
   const ratePesos = sessionTypeInput.shape.ratePesos.parse(input.ratePesos);
-  const [before] = await db.select().from(sessionTypes).where(eq(sessionTypes.id, input.id));
-  if (!before) throw new NotFoundError();
+  const before = await sessionTypeIn(db, actor, input.id, input.branchId);
   await db
     .update(sessionTypes)
     .set({ rateCentavos: ratePesos * 100 })
@@ -221,21 +266,23 @@ export async function updateSessionTypeRate(
     action: "session_type.update",
     entity: "session_type",
     entityId: input.id,
-    before: { rateCentavos: before.rateCentavos },
-    after: { rateCentavos: ratePesos * 100 },
+    before: { branchId: input.branchId, rateCentavos: before.rateCentavos },
+    after: { branchId: input.branchId, rateCentavos: ratePesos * 100 },
     ip: actor.ip,
   });
 }
 
 /** Removing hides the type from booking; past sessions keep it. */
-export async function removeSessionType(db: DbExecutor, actor: Actor, input: { id: string }) {
-  assertCan(actor, "settings:manage");
-  const [before] = await db.select().from(sessionTypes).where(eq(sessionTypes.id, input.id));
-  if (!before) throw new NotFoundError();
+export async function removeSessionType(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; id: string },
+) {
+  await sessionTypeIn(db, actor, input.id, input.branchId);
   const activeCount = await db
     .select({ n: count() })
     .from(sessionTypes)
-    .where(eq(sessionTypes.active, true));
+    .where(and(eq(sessionTypes.branchId, input.branchId), eq(sessionTypes.active, true)));
   if ((activeCount[0]?.n ?? 0) <= 1)
     throw new ValidationError("Keep at least one session type so the desk can book.");
   await db.update(sessionTypes).set({ active: false }).where(eq(sessionTypes.id, input.id));
@@ -374,6 +421,57 @@ export async function setStaffActive(
   return { loginChanged: false };
 }
 
+/**
+ * A new branch starts with the main branch's rates, session types (with their
+ * allowed roles), hours and low-credit reminder. Each can then be changed for
+ * the new branch alone.
+ */
+async function copyBranchSetup(db: DbExecutor, branchId: string) {
+  const [main] = await db
+    .select()
+    .from(branches)
+    .where(ne(branches.id, branchId))
+    .orderBy(desc(branches.isMain), asc(branches.code))
+    .limit(1);
+  if (!main) return;
+  await db
+    .update(branches)
+    .set({
+      opensAtHour: main.opensAtHour,
+      closesAtHour: main.closesAtHour,
+      openDays: main.openDays,
+      lowCreditThresholdCentavos: main.lowCreditThresholdCentavos,
+    })
+    .where(eq(branches.id, branchId));
+  const rates = await db.select().from(branchRates).where(eq(branchRates.branchId, main.id));
+  if (rates.length) {
+    await db
+      .insert(branchRates)
+      .values(rates.map((r) => ({ ...r, branchId, updatedAt: new Date() })));
+  }
+  const types = await listSessionTypes(db, { branchId: main.id });
+  for (const type of types) {
+    const [copy] = await db
+      .insert(sessionTypes)
+      .values({
+        branchId,
+        name: type.name,
+        service: type.service,
+        rateCentavos: type.rateCentavos,
+        anyRateClass: type.anyRateClass,
+        sortOrder: type.sortOrder,
+      })
+      .returning({ id: sessionTypes.id });
+    if (type.allowedRateClassIds?.length) {
+      await db
+        .insert(sessionTypeRateClasses)
+        .values(
+          type.allowedRateClassIds.map((rateClassId) => ({ sessionTypeId: copy!.id, rateClassId })),
+        );
+    }
+  }
+}
+
 /** A new branch with its own receipt counter; the owner who adds it joins it. */
 export async function createBranch(db: DbExecutor, actor: Actor, raw: unknown) {
   assertCan(actor, "settings:manage");
@@ -398,6 +496,7 @@ export async function createBranch(db: DbExecutor, actor: Actor, raw: unknown) {
     .returning();
   await db.insert(receiptCounters).values({ branchId: created!.id, nextNumber: 1 });
   await db.insert(userBranches).values({ userId: actor.userId, branchId: created!.id });
+  await copyBranchSetup(db, created!.id);
   await writeAudit(db, {
     actorUserId: actor.userId,
     action: "branch.create",

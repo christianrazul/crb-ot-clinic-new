@@ -658,3 +658,20 @@ Staff → Edit changes a staff member's name and role (rate class). Their short 
 ### D-116: Staff status drives their login
 
 Setting a staff member inactive (they can't be booked) also turns off their login and signs them out, because someone who leaves should lose access in the same step. Setting them active again turns the login back on. Accounts without a staff record (front desk, owners) are turned off and on from Team accounts.
+
+## Branch-specific settings
+
+### D-117: Rates, session types, hours and the low-credit reminder belong to a branch
+
+Each branch sets its own prices. Roles (rate classes: OT, Speech, OT Aide, SPED) stay clinic-wide because staff, payroll and session-type rules refer to them, but what each role bills and its therapist share now live in `branch_rates` (branch × role). Session types carry a `branch_id`; names are unique within a branch, so both branches can have an "OT session" at different fees. Operating hours were already per branch, and the low-credit reminder moved from `clinic_settings` to `branches`.
+
+- Booking offers and accepts only the branch's own session types.
+- Marking a session attended snapshots the rate and share of the branch where the session happened.
+- My day, payroll and the dashboard read those snapshots, so nothing else changes.
+- A new branch starts with a copy of the main branch's rates, session types (with their allowed roles), hours and reminder, then each can be changed on its own.
+
+Migration 0003 keeps everything as it was: every branch gets the clinic-wide rates and reminder, existing session types go to the main branch, and every other branch gets its own copy, with any of its sessions and series pointed at that copy.
+
+### D-118: Saving settings checks the branch
+
+Settings for rates, session types, staff, hours and the low-credit reminder apply to the branch picked in the sidebar, and the settings header says which ("For CRB Bangkal…"); Branches, Team accounts and the audit log say they cover the whole clinic. Every branch-scoped save sends the branch its form was loaded for, and the server refuses it unless that is still the person's current branch ("You've switched to CRB Panabo since this page loaded…"). That stops a page left open on one branch from saving into another after a switch in a second tab. Each section also re-mounts when the branch changes, so a form never shows one branch's numbers while you're at another. The services still check the owner belongs to that branch.

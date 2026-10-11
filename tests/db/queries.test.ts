@@ -99,7 +99,7 @@ describe("scheduling and settings", () => {
       "Speech",
       "SPED",
     ]);
-    const types = await listSessionTypes(testDb());
+    const types = await listSessionTypes(testDb(), { branchId: "br_bangkal" });
     expect(types.find((t) => t.id === "st_ot")?.allowedRateClassIds?.sort()).toEqual([
       "rc_ot",
       "rc_ot_aide",

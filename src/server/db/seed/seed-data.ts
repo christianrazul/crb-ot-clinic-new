@@ -20,6 +20,10 @@ const USER_BY_NAME = Object.fromEntries(SEED_USERS.map((u) => [u.name, u.id]));
  */
 const UNPAID_PAST_SESSIONS: Record<string, number> = { pat_03: 2, pat_05: 5, pat_11: 1, pat_16: 2 };
 
+const SEED_BRANCHES = ["br_bangkal", "br_panabo"];
+const sessionTypeIdAt = (id: string, branchId: string) =>
+  branchId === "br_bangkal" ? id : `${id}_${branchId.replace("br_", "")}`;
+
 /** The month's running costs so far, for the dashboard's cash flow. */
 const SEED_EXPENSES = [
   {
@@ -158,7 +162,22 @@ export function buildSeedRows() {
     userBranches: SEED_USERS.flatMap((u) =>
       u.branchIds.map((branchId) => ({ userId: u.id, branchId })),
     ),
-    rateClasses: state.rateClasses.map((r, index) => ({ ...r, sortOrder: index })),
+    rateClasses: state.rateClasses.map((r, index) => ({
+      id: r.id,
+      name: r.name,
+      shortName: r.shortName,
+      service: r.service,
+      sortOrder: index,
+    })),
+    // Both branches start with the same rates; each can change its own.
+    branchRates: SEED_BRANCHES.flatMap((branchId) =>
+      state.rateClasses.map((r) => ({
+        branchId,
+        rateClassId: r.id,
+        rateCentavos: r.rateCentavos,
+        therapistSharePct: r.therapistSharePct,
+      })),
+    ),
     staff: state.staff.map((s, index) => ({
       sortOrder: index,
       id: s.id,
@@ -170,17 +189,26 @@ export function buildSeedRows() {
       rateClassId: s.rateClassId,
       active: s.active,
     })),
-    sessionTypes: state.sessionTypes.map((t, index) => ({
-      id: t.id,
-      name: t.name,
-      service: t.service === "none" ? null : t.service,
-      rateCentavos: t.rateCentavos,
-      anyRateClass: t.allowedRateClassIds === null,
-      active: t.active,
-      sortOrder: index,
-    })),
-    sessionTypeRateClasses: state.sessionTypes.flatMap((t) =>
-      (t.allowedRateClassIds ?? []).map((rateClassId) => ({ sessionTypeId: t.id, rateClassId })),
+    // Bangkal keeps the fixture ids; Panabo gets its own copy of each type.
+    sessionTypes: SEED_BRANCHES.flatMap((branchId) =>
+      state.sessionTypes.map((t, index) => ({
+        id: sessionTypeIdAt(t.id, branchId),
+        branchId,
+        name: t.name,
+        service: t.service === "none" ? null : t.service,
+        rateCentavos: t.rateCentavos,
+        anyRateClass: t.allowedRateClassIds === null,
+        active: t.active,
+        sortOrder: index,
+      })),
+    ),
+    sessionTypeRateClasses: SEED_BRANCHES.flatMap((branchId) =>
+      state.sessionTypes.flatMap((t) =>
+        (t.allowedRateClassIds ?? []).map((rateClassId) => ({
+          sessionTypeId: sessionTypeIdAt(t.id, branchId),
+          rateClassId,
+        })),
+      ),
     ),
     patients: state.patients.map((p) => ({
       id: p.id,

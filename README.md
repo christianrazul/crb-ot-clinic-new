@@ -133,6 +133,8 @@ To change the schema, edit `src/server/db/schema/`, run `pnpm db:generate`, revi
 
 ## Demo data
 
+Rates and splits, session types, operating hours and the low-credit reminder are set per branch: Settings applies to the branch picked in the sidebar. Branches, Team accounts and the audit log are clinic-wide.
+
 `pnpm db:seed` loads the typed fixtures in `src/lib/fixtures/` into Postgres: two branches, five staff, sixteen patients, five weeks of sessions, notes, payments, credit ledgers and expenses. In development `DEMO_NOW` freezes the clinic clock at Saturday, August 22, 2026, 10:20 AM Manila time, so the demo week is "today". All the data is at CRB Bangkal; switch to Panabo to see the empty states. Everything you change is saved; run `pnpm db:seed` again to start over.
 
 ## Security

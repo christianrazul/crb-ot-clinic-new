@@ -8,7 +8,8 @@ import { assertCan } from "@/server/auth/permissions";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
 import { getAppointment } from "@/server/db/queries/appointments";
-import { appointments, rateClasses, staff } from "@/server/db/schema";
+import { rateAt } from "@/server/db/queries/rates";
+import { appointments, staff } from "@/server/db/schema";
 
 import { NotFoundError, ValidationError } from "./errors";
 
@@ -36,11 +37,12 @@ export async function setAppointmentStatus(db: DbExecutor, actor: Actor, raw: un
   let payrollRateCentavos = before.payrollRateCentavos;
   let payrollSharePct = before.payrollSharePct;
   if (input.status === "attended" && before.status !== "attended") {
-    const [snapshot] = await db
-      .select({ rate: rateClasses.rateCentavos, share: rateClasses.therapistSharePct })
+    // The therapist's role, priced at the branch where the session happened.
+    const [member] = await db
+      .select({ rateClassId: staff.rateClassId })
       .from(staff)
-      .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
       .where(eq(staff.id, before.staffId));
+    const snapshot = member ? await rateAt(db, before.branchId, member.rateClassId) : null;
     payrollRateCentavos = snapshot?.rate ?? null;
     payrollSharePct = snapshot?.share ?? null;
   } else if (input.status !== "attended") {
