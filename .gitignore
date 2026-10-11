@@ -34,3 +34,6 @@ pnpm-debug.log*
 
 # Playwright saved sessions
 tests/e2e/.auth/
+
+# CI workflows (overrides a global ignore of .github/*)
+!/.github/*

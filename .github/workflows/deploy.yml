@@ -1,0 +1,70 @@
+name: Deploy
+
+# Called by CI after the images are pushed, or run by hand from the Actions tab
+# to redeploy or roll back to an earlier commit's images.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to deploy (a commit SHA from main, or latest)
+        type: string
+        required: true
+        default: latest
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    # Add yourself as a required reviewer on this environment so every deploy waits for approval.
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    env:
+      TAG: ${{ inputs.tag }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^([0-9a-f]{40}|latest)$ ]]; then
+            echo "Tag must be a full commit SHA or latest." >&2
+            exit 1
+          fi
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Copy the stack definition
+        run: scp -i ~/.ssh/deploy_key -r docker-compose.prod.yml deploy "$DEPLOY_USER@$DEPLOY_HOST:/srv/crb-ot-clinic/"
+      - name: Roll out
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd /srv/crb-ot-clinic \
+            && sed -i 's/^APP_TAG=.*/APP_TAG=$TAG/' .env \
+            && docker compose -f docker-compose.prod.yml pull app migrate \
+            && docker compose -f docker-compose.prod.yml up -d --build --remove-orphans \
+            && docker image prune -f"
+      - name: Health check
+        run: |
+          for _ in $(seq 1 30); do
+            curl -fsS "https://$DEPLOY_DOMAIN/api/health" && exit 0
+            sleep 5
+          done
+          echo "The app did not report healthy within 150 seconds." >&2
+          exit 1
