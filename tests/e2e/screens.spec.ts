@@ -235,7 +235,9 @@ test.describe("therapist", () => {
     await expect(page).toHaveURL(/\/my-day$/);
   });
 
-  test("adds a note and clears it from notes due", async ({ page }) => {
+  test("adds a note and clears it from notes due", async ({ page, isMobile }) => {
+    // Writes to the shared e2e database, so it runs once (desktop), not per device.
+    test.skip(isMobile, "Desktop only");
     await page.goto("/my-day");
     await expect(page.getByText("Due today")).toBeVisible();
     await page.getByRole("button", { name: "Add note for Liam Santos" }).click();

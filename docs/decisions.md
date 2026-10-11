@@ -439,3 +439,27 @@ The check-in queue (sessions starting in the next two hours) and the "Collect pa
 ### D-060 (updated): What still runs on the demo store
 
 Billing, payments and advance credit (Milestone 9), the therapist's My day and notes (Milestone 8), payroll (Milestone 10) and the dashboard (Milestone 11) still use the demo store. The "Collect" button on Today opens the demo payment dialog until Milestone 9.
+
+## Milestone 8: session notes and history
+
+### D-074: Notes are append-only and versioned
+
+A note is never changed. Editing inserts a new row with `version + 1` and `supersedes_id` pointing at the old one, and the trigger from D-036 refuses `UPDATE` and `DELETE`. Lists and dialogs show only the latest version: no other note supersedes it. An edited note shows an "Edited" badge. Only the author can edit, and only the latest version. Every new note and edit writes an audit entry.
+
+### D-075: Who writes and reads notes
+
+- **Therapists** write notes only on their own sessions, and only once the session is checked in or attended. A scheduled session says "ask the desk to check the patient in first".
+- **The owner and the desk** read notes for patients at their branches.
+- **Therapists** read notes only for their own patients. Anything else returns "not found", as with patients.
+
+### D-076: Notes due within 24 hours
+
+"Notes due" lists the therapist's attended sessions from the last 30 days that have no note, oldest first. A note is on time within 24 hours of the session ending ("Due today"). After that it shows "N days late", counted in calendar days.
+
+### D-077: My day earnings come from payroll snapshots
+
+The therapist's earnings this month are the sum of the therapist share on each attended session, using its payroll snapshot (D-037). The weekly bars group by week of the month (days 1–7, 8–14 and so on). This is the same source payroll will use in Milestone 10.
+
+### D-060 (updated): What still runs on the demo store
+
+Billing, payments and advance credit (Milestone 9), payroll (Milestone 10) and the dashboard (Milestone 11).
