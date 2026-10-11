@@ -3,7 +3,7 @@ import "server-only";
 import { initialDemoState } from "@/lib/demo/state";
 import { DEMO_TODAY } from "@/lib/fixtures/demo-clock";
 import { USERS } from "@/lib/fixtures/users";
-import { toManilaIsoDate, manilaHour, manilaWeekday } from "@/lib/dates";
+import { fromManilaLocal, toManilaIsoDate, manilaHour, manilaWeekday } from "@/lib/dates";
 
 /** Seed accounts, one per role. Passwords are set in Milestone 4. */
 export const SEED_USERS = [
@@ -19,6 +19,34 @@ const USER_BY_NAME = Object.fromEntries(SEED_USERS.map((u) => [u.name, u.id]));
  * balances match the mockup (Enzo ₱1,400, Althea ₱3,500, Elle ₱700, Kian ₱1,400).
  */
 const UNPAID_PAST_SESSIONS: Record<string, number> = { pat_03: 2, pat_05: 5, pat_11: 1, pat_16: 2 };
+
+/** The month's running costs so far, for the dashboard's cash flow. */
+const SEED_EXPENSES = [
+  {
+    category: "Rent",
+    amountCentavos: 2_500_000,
+    spentOn: "2026-08-01",
+    description: "August rent",
+  },
+  {
+    category: "Utilities",
+    amountCentavos: 680_000,
+    spentOn: "2026-08-10",
+    description: "Electricity and water",
+  },
+  {
+    category: "Supplies",
+    amountCentavos: 435_000,
+    spentOn: "2026-08-14",
+    description: "Therapy materials",
+  },
+  {
+    category: "Maintenance",
+    amountCentavos: 200_000,
+    spentOn: "2026-08-20",
+    description: "Aircon cleaning",
+  },
+];
 
 /** Every other past attended session was paid in cash at the desk. */
 function historicPayments(
@@ -221,6 +249,12 @@ export function buildSeedRows() {
       ...c,
       createdByUserId: deskUserId,
       createdAt: new Date(c.createdAt),
+    })),
+    expenses: SEED_EXPENSES.map((e) => ({
+      ...e,
+      branchId: "br_bangkal",
+      createdByUserId: USER_BY_NAME[USERS.superadmin.name] ?? null,
+      createdAt: fromManilaLocal(e.spentOn, "17:00"),
     })),
     receiptCounters: [
       { branchId: "br_bangkal", nextNumber: state.nextReceiptNo },

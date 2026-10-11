@@ -393,3 +393,23 @@ test.describe("payroll", () => {
     });
   });
 });
+
+test.describe("owner dashboard", () => {
+  test.skip(({ isMobile }) => isMobile, "Writes to the shared database");
+
+  test("shows the month from the database and records an expense", async ({ page }) => {
+    await page.goto("/dashboard");
+    await expect(page.getByText("Income in August")).toBeVisible();
+    await expect(page.getByText("Sessions this month")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Enzo Dela Peña.*3 this month/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Record expense" }).click();
+    const dialog = page.getByRole("dialog", { name: "Record expense" });
+    await dialog.getByLabel("Category").click();
+    await page.getByRole("option", { name: "Supplies" }).click();
+    await dialog.getByLabel("Amount").fill("1250");
+    await dialog.getByRole("button", { name: "Record ₱1,250" }).click();
+    await expect(page.getByText("Expense recorded")).toBeVisible();
+    await expect(dialog).toBeHidden();
+  });
+});

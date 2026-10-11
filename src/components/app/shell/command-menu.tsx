@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 
 import * as React from "react";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
+import { useViewer } from "@/components/app/shell/viewer-context";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +45,7 @@ function containsAllWords(value: string, search: string) {
 /** Ctrl/Cmd+K palette. Patients come from the demo store until Milestone 5 adds server search. */
 export function CommandMenu() {
   const { commandOpen, setCommandOpen } = useShell();
-  const { viewer } = useDemoStore();
+  const viewer = useViewer();
   const [query, setQuery] = React.useState("");
   const { openDialog } = useDialogs();
   const { resolvedTheme, setTheme } = useTheme();

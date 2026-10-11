@@ -511,3 +511,24 @@ Daily is one Manila calendar day; weekly is Monday to Sunday; monthly is the cal
 ### D-060 (updated): What still runs on the demo store
 
 The dashboard (Milestone 11) and the shell's `viewer`.
+
+## Milestone 11: Dashboard
+
+### D-087: Dashboard figures are SQL aggregates on each load
+
+`getDashboard` runs grouped queries for the branch and the current Manila month; nothing is cached or precomputed. At this clinic's size (hundreds of sessions a month) each query is an index range scan. If it ever gets slow, a nightly materialized view is the next step.
+
+- **Income** is money received: the part of each session payment not paid from credit, plus advance top-ups. Credit spent on a session was already counted when it was topped up.
+- **Sessions this month** counts attended sessions. **No-show rate** is no-shows over attended plus no-shows. Deltas compare with the previous calendar month and are hidden when that month has nothing to compare with.
+- **Active patients** counts active, not removed, patients; "new" is those enrolled this month (`enrolled_on`).
+- **Sessions by service** groups attended sessions by the session type's service, so OT Aide sessions count as OT.
+- **Therapist earnings** sums the therapist share from payroll snapshots per rate class, the same source as payroll (D-084).
+- **Cash flow** covers the last 8 months; the net cash badge compares the latest month's net with the month before.
+
+### D-088: Expenses
+
+Expenses are recorded by the owner (`expense:manage`) from a "Record expense" button on the dashboard header, which the mockup did not have; there is no other place to enter them yet. Categories are a fixed list (rent, utilities, supplies, salaries, maintenance, other). Dates cannot be in the future. Like other financial records they are never edited or deleted; each create writes an audit entry. Therapist shares are not added to expenses automatically; record payouts as "Salaries" if the owner wants them in cash flow. The seed adds four August expenses for Bangkal.
+
+### D-060 (final): The demo store is gone
+
+Every screen now reads the database. The in-memory store, its reducer and selectors are deleted. The shell's `viewer` (role and branch, for choosing what to show) comes from the server session through `ViewerProvider`. The Milestone 2 fixtures in `src/lib/fixtures` and `src/lib/demo/state.ts` remain only as the seed's source data.

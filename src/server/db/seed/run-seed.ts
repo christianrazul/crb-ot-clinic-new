@@ -74,6 +74,7 @@ export async function seed(db: Database, options: { password?: string } = {}) {
     await tx.insert(t.sessionNotes).values(rows.sessionNotes);
     await tx.insert(t.payments).values(rows.payments);
     await tx.insert(t.creditLedger).values(rows.creditLedger);
+    await tx.insert(t.expenses).values(rows.expenses);
     await tx.insert(t.receiptCounters).values(rows.receiptCounters);
     await tx.insert(t.clinicSettings).values({ id: "clinic" });
   });

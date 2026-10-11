@@ -20,6 +20,7 @@ export type Action =
   | "credit:read"
   | "credit:top-up"
   | "payroll:read"
+  | "expense:manage"
   | "settings:manage"
   | "user:manage"
   | "audit:read";
@@ -38,6 +39,7 @@ const GRANTS: Record<Action, Role[]> = {
   "credit:read": ["superadmin", "secretary"],
   "credit:top-up": ["superadmin", "secretary"],
   "payroll:read": ["superadmin"],
+  "expense:manage": ["superadmin"],
   "settings:manage": ["superadmin"],
   "user:manage": ["superadmin"],
   "audit:read": ["superadmin"],

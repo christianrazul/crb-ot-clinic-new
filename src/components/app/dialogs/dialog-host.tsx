@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
+import { useViewer } from "@/components/app/shell/viewer-context";
 
 import { AdvancePaymentDialog } from "./advance-payment-dialog";
 import { type BookingDraft, BookingDialog } from "./booking-dialog";
@@ -37,7 +37,7 @@ export function useDialogs(): DialogsApi {
  * animation.
  */
 export function DialogHost({ children, today }: { children: React.ReactNode; today: string }) {
-  const { viewer } = useDemoStore();
+  const viewer = useViewer();
   const [request, setRequest] = React.useState<DialogRequest | null>(null);
   const [open, setOpen] = React.useState(false);
   const [key, setKey] = React.useState(0);

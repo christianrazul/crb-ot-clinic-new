@@ -2,7 +2,6 @@
 
 import type * as React from "react";
 
-import { DemoStoreProvider } from "@/components/app/demo/demo-store";
 import { DialogHost } from "@/components/app/dialogs/dialog-host";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { BranchFixture } from "@/lib/fixtures/branches";
@@ -13,6 +12,7 @@ import { AppHeader } from "./app-header";
 import { AppSidebar } from "./app-sidebar";
 import { CommandMenu } from "./command-menu";
 import { ShellProvider } from "./shell-context";
+import { ViewerProvider } from "./viewer-context";
 
 type AppShellProps = {
   user: UserFixture;
@@ -43,7 +43,7 @@ export function AppShell({
   return (
     <ShellProvider defaultCollapsed={sidebarCollapsed}>
       <TooltipProvider delayDuration={200}>
-        <DemoStoreProvider user={user} branch={branch}>
+        <ViewerProvider user={user} branch={branch}>
           <DialogHost today={today}>
             <div className="flex h-dvh w-full overflow-hidden bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
               <AppSidebar
@@ -67,7 +67,7 @@ export function AppShell({
             </div>
             <CommandMenu />
           </DialogHost>
-        </DemoStoreProvider>
+        </ViewerProvider>
       </TooltipProvider>
     </ShellProvider>
   );
