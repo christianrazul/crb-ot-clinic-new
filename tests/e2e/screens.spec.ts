@@ -326,3 +326,37 @@ test.describe("patient records", () => {
     await expect(page.getByText("No patients match these filters")).toBeVisible();
   });
 });
+
+test.describe("settings persist", () => {
+  test.skip(({ isMobile }) => isMobile, "Desktop layout");
+
+  test("rates, session types and hours survive a reload", async ({ page }) => {
+    await page.goto("/settings?tab=rates");
+    const share = page.getByLabel("SPED Tutor therapist share");
+    await share.fill("75");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Rates saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("SPED Tutor therapist share")).toHaveValue("75");
+
+    await page.goto("/settings?tab=sessions");
+    await page.getByRole("button", { name: "Add session type" }).click();
+    await page.getByLabel("Name").fill("OT group session");
+    await page.getByLabel("Rate", { exact: true }).fill("400");
+    await page.getByRole("button", { name: "Add session type" }).click();
+    await expect(page.getByText("OT group session added")).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("OT group session rate")).toHaveValue("400");
+
+    await page.goto("/settings?tab=hours");
+    await page.getByRole("button", { name: "Sat", exact: true }).click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Operating hours saved")).toBeVisible();
+    await page.reload();
+    await expect(page.getByText("Closed on Sat, Sun.")).toBeVisible();
+    // Put Saturday back for the other tests.
+    await page.getByRole("button", { name: "Sat", exact: true }).click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Operating hours saved")).toBeVisible();
+  });
+});

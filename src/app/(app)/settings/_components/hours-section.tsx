@@ -3,7 +3,6 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { SectionHead } from "@/components/app/page-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,9 +17,10 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { hourLabel } from "@/lib/booking";
-import { byId } from "@/lib/demo/selectors";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
-// Listed Monday first, as the clinic thinks of its week.
+import { saveHoursAction } from "../actions";
+
 const DAYS = [
   { value: 1, label: "Mon" },
   { value: 2, label: "Tue" },
@@ -30,33 +30,31 @@ const DAYS = [
   { value: 6, label: "Sat" },
   { value: 0, label: "Sun" },
 ];
-const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7:00 AM to 7:00 PM
+const HOURS = Array.from({ length: 13 }, (_, i) => i + 7);
 
-export function HoursSection() {
-  const { state, dispatch, viewer } = useDemoStore();
-  const branch = byId(state.branches, viewer.branchId)!;
+export function HoursSection({ data }: { data: SettingsPageData }) {
+  const { branch } = data;
   const [days, setDays] = React.useState(branch.openDays.map(String));
   const [opens, setOpens] = React.useState(String(branch.opensAtHour));
   const [closes, setCloses] = React.useState(String(branch.closesAtHour));
-
+  const [pending, startTransition] = React.useTransition();
   const closedDays = DAYS.filter((d) => !days.includes(String(d.value)));
   const invalid = Number(closes) <= Number(opens);
 
-  const save = () => {
-    if (invalid || !days.length) return;
-    dispatch({
-      type: "branch/setHours",
-      id: branch.id,
-      openDays: days.map(Number),
-      opensAtHour: Number(opens),
-      closesAtHour: Number(closes),
+  const save = () =>
+    startTransition(async () => {
+      const result = await saveHoursAction({
+        openDays: days.map(Number),
+        opensAtHour: Number(opens),
+        closesAtHour: Number(closes),
+      });
+      if (!result.ok) return void toast.error(result.error);
+      toast.success("Operating hours saved", {
+        description: `${DAYS.filter((d) => days.includes(String(d.value)))
+          .map((d) => d.label)
+          .join(", ")}, ${hourLabel(Number(opens))} to ${hourLabel(Number(closes))}`,
+      });
     });
-    toast.success("Operating hours saved", {
-      description: `${DAYS.filter((d) => days.includes(String(d.value)))
-        .map((d) => d.label)
-        .join(", ")}, ${hourLabel(Number(opens))} to ${hourLabel(Number(closes))}`,
-    });
-  };
 
   return (
     <>
@@ -64,7 +62,7 @@ export function HoursSection() {
         title="Operating hours"
         description={`When sessions can be booked at ${branch.name}. Sessions start on the hour.`}
       >
-        <Button size="sm" onClick={save} disabled={invalid || !days.length}>
+        <Button size="sm" onClick={save} disabled={invalid || !days.length || pending}>
           Save changes
         </Button>
       </SectionHead>
@@ -131,6 +129,9 @@ export function HoursSection() {
           {invalid && (
             <p className="text-sm text-danger-strong">Closing time must be after opening time.</p>
           )}
+          <p className="text-xs text-muted-foreground">
+            Existing bookings stay where they are; only new bookings follow the new hours.
+          </p>
         </CardContent>
       </Card>
     </>

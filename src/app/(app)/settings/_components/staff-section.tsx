@@ -1,10 +1,9 @@
 "use client";
 
-import { MoreHorizontal, Pencil, UserPlus, UserX } from "lucide-react";
+import { MoreHorizontal, UserPlus, UserX } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { SectionHead } from "@/components/app/page-layout";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -35,21 +34,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { byId } from "@/lib/demo/selectors";
 import { initialsOf } from "@/lib/initials";
 import { SERVICE_SOFT } from "@/lib/services";
 import { cn } from "@/lib/utils";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
+import { addStaffAction, setStaffActiveAction } from "../actions";
 import { AddForm } from "./add-form";
 
-/** Below this, a therapist's week has room for more sessions. */
+/** Below this, a therapist's month has room for more sessions. */
 const LOW_UTILIZATION_PCT = 70;
 
-export function StaffSection() {
-  const { state, dispatch } = useDemoStore();
+export function StaffSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [rateClassId, setRateClassId] = React.useState(state.rateClasses[0]!.id);
+  const [email, setEmail] = React.useState("");
+  const [rateClassId, setRateClassId] = React.useState(data.rateClasses[0]?.id ?? "");
+  const [pending, startTransition] = React.useTransition();
 
   return (
     <>
@@ -63,19 +64,30 @@ export function StaffSection() {
           </Button>
         )}
       </SectionHead>
-      <Card className="overflow-hidden">
+      <Card className={cn("overflow-hidden", pending && "opacity-70")}>
         <AddForm
           open={open}
           submitLabel="Add staff member"
           onCancel={() => setOpen(false)}
-          onSubmit={() => {
-            const trimmed = name.trim();
-            if (!trimmed) return;
-            dispatch({ type: "staff/add", displayName: trimmed, rateClassId });
-            setName("");
-            setOpen(false);
-            toast.success(`${trimmed} added to staff`);
-          }}
+          onSubmit={() =>
+            startTransition(async () => {
+              const trimmed = name.trim();
+              const result = await addStaffAction({
+                displayName: trimmed,
+                rateClassId,
+                loginEmail: email.trim(),
+              });
+              if (!result.ok) return void toast.error(result.error);
+              setName("");
+              setEmail("");
+              setOpen(false);
+              toast.success(`${trimmed} added to staff`, {
+                description: result.data.invited
+                  ? `We emailed ${email.trim()} a link to set a password.`
+                  : undefined,
+              });
+            })
+          }
         >
           <div className="grid min-w-[200px] flex-1 gap-1.5">
             <Label htmlFor="sf-name">Full name</Label>
@@ -94,7 +106,7 @@ export function StaffSection() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {state.rateClasses.map((r) => (
+                {data.rateClasses.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
                     <span className="flex items-center gap-2">
                       <SvcDot service={r.service} />
@@ -104,6 +116,18 @@ export function StaffSection() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid min-w-[200px] flex-1 gap-1.5">
+            <Label htmlFor="sf-email">
+              Login email <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="sf-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Gives them My day"
+            />
           </div>
         </AddForm>
         <Table>
@@ -121,9 +145,7 @@ export function StaffSection() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {state.staff.map((member) => {
-              const rateClass = byId(state.rateClasses, member.rateClassId);
-              const service = rateClass?.service ?? "none";
+            {data.staff.map((member) => {
               const low =
                 member.utilizationPct !== null && member.utilizationPct < LOW_UTILIZATION_PCT;
               return (
@@ -131,17 +153,20 @@ export function StaffSection() {
                   <TableCell>
                     <div className="flex items-center gap-2.5">
                       <Avatar className="size-7" aria-hidden>
-                        <AvatarFallback className={cn("text-[10px]", SERVICE_SOFT[service])}>
+                        <AvatarFallback
+                          className={cn("text-[10px]", SERVICE_SOFT[member.rateClass.service])}
+                        >
                           {initialsOf(member.displayName)}
                         </AvatarFallback>
                       </Avatar>
                       <span className="font-medium whitespace-nowrap">{member.displayName}</span>
+                      {member.userId && <Badge variant="muted">Login</Badge>}
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      <SvcDot service={service} />
-                      {rateClass?.shortName}
+                      <SvcDot service={member.rateClass.service} />
+                      {member.rateClass.shortName}
                     </Badge>
                   </TableCell>
                   <TableCell>
@@ -157,7 +182,7 @@ export function StaffSection() {
                     ) : (
                       <div className="flex items-center gap-2">
                         <Progress
-                          value={member.utilizationPct}
+                          value={Math.min(100, member.utilizationPct)}
                           aria-label={`${member.displayName} utilization`}
                           className="h-1.5 flex-1"
                           indicatorClassName={low ? "bg-warning" : "bg-success"}
@@ -188,24 +213,15 @@ export function StaffSection() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onSelect={() =>
-                            toast.info("Editing staff is not built yet", {
-                              description: "It arrives in Milestone 6.",
+                            startTransition(async () => {
+                              const result = await setStaffActiveAction(member.id, !member.active);
+                              if (result.ok)
+                                toast.success(
+                                  `${member.displayName} set ${member.active ? "inactive" : "active"}`,
+                                );
+                              else toast.error(result.error);
                             })
                           }
-                        >
-                          <Pencil /> Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => {
-                            dispatch({
-                              type: "staff/setActive",
-                              id: member.id,
-                              active: !member.active,
-                            });
-                            toast.success(
-                              `${member.displayName} set ${member.active ? "inactive" : "active"}`,
-                            );
-                          }}
                         >
                           <UserX /> {member.active ? "Set inactive" : "Set active"}
                         </DropdownMenuItem>

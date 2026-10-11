@@ -1,10 +1,9 @@
 "use client";
 
-import { Pencil, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { SectionHead } from "@/components/app/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,14 +19,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { branchSubtitle } from "@/lib/fixtures/branches";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
+import { addBranchAction } from "../actions";
 import { AddForm } from "./add-form";
 
-export function BranchesSection() {
-  const { state, dispatch } = useDemoStore();
+export function BranchesSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [location, setLocation] = React.useState("");
+  const [, startTransition] = React.useTransition();
 
   return (
     <>
@@ -43,17 +44,21 @@ export function BranchesSection() {
           open={open}
           submitLabel="Add branch"
           onCancel={() => setOpen(false)}
-          onSubmit={() => {
-            const trimmed = name.trim();
-            if (!trimmed) return;
-            dispatch({ type: "branch/add", name: trimmed, location: location.trim() });
-            setName("");
-            setLocation("");
-            setOpen(false);
-            toast.success(`${trimmed} added`, {
-              description: "The branch switcher picks it up in Milestone 6.",
-            });
-          }}
+          onSubmit={() =>
+            startTransition(async () => {
+              const result = await addBranchAction({
+                name: name.trim(),
+                location: location.trim(),
+              });
+              if (!result.ok) return void toast.error(result.error);
+              setName("");
+              setLocation("");
+              setOpen(false);
+              toast.success(`${result.data.name} added`, {
+                description: "It's in the branch switcher now.",
+              });
+            })
+          }
         >
           <div className="grid min-w-[180px] flex-1 gap-1.5">
             <Label htmlFor="br-name">Branch name</Label>
@@ -80,13 +85,11 @@ export function BranchesSection() {
             <TableRow>
               <TableHead>Branch</TableHead>
               <TableHead>Location</TableHead>
-              <TableHead className="w-[100px] text-right">
-                <span className="sr-only">Action</span>
-              </TableHead>
+              <TableHead className="text-right">Hours</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {state.branches.map((branch) => (
+            {data.branches.map((branch) => (
               <TableRow key={branch.id}>
                 <TableCell>
                   <div className="flex items-center gap-2.5">
@@ -98,20 +101,8 @@ export function BranchesSection() {
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{branchSubtitle(branch)}</TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    aria-label={`Edit ${branch.name}`}
-                    onClick={() =>
-                      toast.info("Editing branches is not built yet", {
-                        description: "It arrives in Milestone 6.",
-                      })
-                    }
-                  >
-                    <Pencil /> Edit
-                  </Button>
+                <TableCell className="text-right text-muted-foreground">
+                  {branch.opensAtHour}:00 to {branch.closesAtHour}:00
                 </TableCell>
               </TableRow>
             ))}

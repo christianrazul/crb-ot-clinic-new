@@ -1,0 +1,387 @@
+import "server-only";
+
+import { and, asc, count, countDistinct, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+
+import { fromManilaLocal, manilaWeekday } from "@/lib/dates";
+import {
+  branchInput,
+  hoursInput,
+  rateClassesInput,
+  sessionTypeInput,
+  staffInput,
+} from "@/lib/validation/settings";
+import type { Actor } from "@/server/auth/actor";
+import { assertCan } from "@/server/auth/permissions";
+import { clinicToday } from "@/server/clock";
+import type { DbExecutor } from "@/server/db/client";
+import { writeAudit } from "@/server/db/queries/audit";
+import { listSessionTypes } from "@/server/db/queries/session-types";
+import {
+  appointments,
+  branches,
+  rateClasses,
+  receiptCounters,
+  sessionTypes,
+  staff,
+  userBranches,
+} from "@/server/db/schema";
+
+import { NotFoundError, ValidationError } from "./errors";
+import { createAccount } from "./users";
+
+const monthRange = (today: string) => {
+  const [y, m] = today.split("-").map(Number) as [number, number];
+  const first = `${y}-${String(m).padStart(2, "0")}-01`;
+  const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+  return { first, next, from: fromManilaLocal(first, "00:00"), to: fromManilaLocal(next, "00:00") };
+};
+
+/** Bookable one-hour slots in a month for one person, from the branch's hours. */
+function monthCapacity(
+  branch: { openDays: number[]; opensAtHour: number; closesAtHour: number },
+  first: string,
+  next: string,
+) {
+  let days = 0;
+  for (
+    let d = new Date(`${first}T04:00:00Z`);
+    d < new Date(`${next}T04:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    if (branch.openDays.includes(manilaWeekday(d))) days += 1;
+  }
+  return days * (branch.closesAtHour - branch.opensAtHour);
+}
+
+/**
+ * Staff at a branch with this month's load: sessions held, distinct patients,
+ * and utilization (booked hours out of open hours this month).
+ */
+export async function staffWithLoad(db: DbExecutor, branchId: string) {
+  const [branch] = await db.select().from(branches).where(eq(branches.id, branchId));
+  if (!branch) throw new NotFoundError();
+  const { first, next, from, to } = monthRange(clinicToday());
+  const rows = await db
+    .select({ staff, rateClass: rateClasses })
+    .from(staff)
+    .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
+    .where(and(eq(staff.branchId, branchId), isNull(staff.deletedAt)))
+    .orderBy(asc(staff.sortOrder), asc(staff.displayName));
+  const load = await db
+    .select({
+      staffId: appointments.staffId,
+      held: sql<number>`count(*) filter (where ${appointments.status} = 'attended')`.mapWith(
+        Number,
+      ),
+      booked: count(),
+      patients: countDistinct(appointments.patientId),
+    })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.branchId, branchId),
+        gte(appointments.startsAt, from),
+        lt(appointments.startsAt, to),
+        inArray(appointments.status, ["scheduled", "checked_in", "attended", "no_show"]),
+      ),
+    )
+    .groupBy(appointments.staffId);
+  const capacity = monthCapacity(branch, first, next);
+  return rows.map(({ staff: member, rateClass }) => {
+    const l = load.find((x) => x.staffId === member.id);
+    return {
+      ...member,
+      rateClass,
+      monthSessions: l?.held ?? 0,
+      monthPatients: l?.patients ?? 0,
+      utilizationPct: l && capacity ? Math.round((l.booked / capacity) * 100) : null,
+    };
+  });
+}
+
+export async function loadSettings(db: DbExecutor, actor: Actor, branchId: string) {
+  assertCan(actor, "settings:manage", { branchId });
+  const [rates, types, staffRows, branchRows] = await Promise.all([
+    db.select().from(rateClasses).orderBy(asc(rateClasses.sortOrder)),
+    listSessionTypes(db),
+    staffWithLoad(db, branchId),
+    db
+      .select()
+      .from(branches)
+      .where(inArray(branches.id, actor.branchIds))
+      .orderBy(asc(branches.code)),
+  ]);
+  return { rateClasses: rates, sessionTypes: types, staff: staffRows, branches: branchRows };
+}
+
+/**
+ * New rates and splits apply to sessions marked attended from now on.
+ * Attended sessions keep their payroll snapshot, so past payroll never changes.
+ */
+export async function updateRateClasses(db: DbExecutor, actor: Actor, raw: unknown) {
+  assertCan(actor, "settings:manage");
+  const rows = rateClassesInput.parse(raw);
+  const current = await db
+    .select()
+    .from(rateClasses)
+    .where(
+      inArray(
+        rateClasses.id,
+        rows.map((r) => r.id),
+      ),
+    );
+  for (const row of rows) {
+    const before = current.find((c) => c.id === row.id);
+    if (!before) throw new NotFoundError("That role no longer exists. Reload the page.");
+    const rateCentavos = row.ratePesos * 100;
+    if (before.rateCentavos === rateCentavos && before.therapistSharePct === row.therapistSharePct)
+      continue;
+    await db
+      .update(rateClasses)
+      .set({ rateCentavos, therapistSharePct: row.therapistSharePct })
+      .where(eq(rateClasses.id, row.id));
+    await writeAudit(db, {
+      actorUserId: actor.userId,
+      action: "rate_class.update",
+      entity: "rate_class",
+      entityId: row.id,
+      before: { rateCentavos: before.rateCentavos, therapistSharePct: before.therapistSharePct },
+      after: { rateCentavos, therapistSharePct: row.therapistSharePct },
+      ip: actor.ip,
+    });
+  }
+}
+
+export async function createSessionType(db: DbExecutor, actor: Actor, raw: unknown) {
+  assertCan(actor, "settings:manage");
+  const input = sessionTypeInput.parse(raw);
+  const [existing] = await db
+    .select()
+    .from(sessionTypes)
+    .where(eq(sql`lower(${sessionTypes.name})`, input.name.toLowerCase()));
+  if (existing?.active)
+    throw new ValidationError(`There is already a session type called ${existing.name}.`);
+  if (existing) {
+    // Re-adding a removed type brings it back with the new rate.
+    await db
+      .update(sessionTypes)
+      .set({ active: true, rateCentavos: input.ratePesos * 100 })
+      .where(eq(sessionTypes.id, existing.id));
+    await writeAudit(db, {
+      actorUserId: actor.userId,
+      action: "session_type.restore",
+      entity: "session_type",
+      entityId: existing.id,
+      after: input,
+      ip: actor.ip,
+    });
+    return existing.id;
+  }
+  const [{ max } = { max: 0 }] = await db
+    .select({ max: sql<number>`coalesce(max(${sessionTypes.sortOrder}), 0)`.mapWith(Number) })
+    .from(sessionTypes);
+  const [created] = await db
+    .insert(sessionTypes)
+    .values({
+      name: input.name,
+      rateCentavos: input.ratePesos * 100,
+      anyRateClass: true,
+      sortOrder: max + 1,
+    })
+    .returning();
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.create",
+    entity: "session_type",
+    entityId: created!.id,
+    after: input,
+    ip: actor.ip,
+  });
+  return created!.id;
+}
+
+/** A new default fee for future bookings. Booked sessions keep their fee. */
+export async function updateSessionTypeRate(
+  db: DbExecutor,
+  actor: Actor,
+  input: { id: string; ratePesos: unknown },
+) {
+  assertCan(actor, "settings:manage");
+  const ratePesos = sessionTypeInput.shape.ratePesos.parse(input.ratePesos);
+  const [before] = await db.select().from(sessionTypes).where(eq(sessionTypes.id, input.id));
+  if (!before) throw new NotFoundError();
+  await db
+    .update(sessionTypes)
+    .set({ rateCentavos: ratePesos * 100 })
+    .where(eq(sessionTypes.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.update",
+    entity: "session_type",
+    entityId: input.id,
+    before: { rateCentavos: before.rateCentavos },
+    after: { rateCentavos: ratePesos * 100 },
+    ip: actor.ip,
+  });
+}
+
+/** Removing hides the type from booking; past sessions keep it. */
+export async function removeSessionType(db: DbExecutor, actor: Actor, input: { id: string }) {
+  assertCan(actor, "settings:manage");
+  const [before] = await db.select().from(sessionTypes).where(eq(sessionTypes.id, input.id));
+  if (!before) throw new NotFoundError();
+  const activeCount = await db
+    .select({ n: count() })
+    .from(sessionTypes)
+    .where(eq(sessionTypes.active, true));
+  if ((activeCount[0]?.n ?? 0) <= 1)
+    throw new ValidationError("Keep at least one session type so the desk can book.");
+  await db.update(sessionTypes).set({ active: false }).where(eq(sessionTypes.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.remove",
+    entity: "session_type",
+    entityId: input.id,
+    ip: actor.ip,
+  });
+}
+
+/** Adds a staff member; with a login email, also creates their account. */
+export async function createStaff(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; values: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const values = staffInput.parse(input.values);
+  const [rateClass] = await db
+    .select()
+    .from(rateClasses)
+    .where(eq(rateClasses.id, values.rateClassId));
+  if (!rateClass) throw new ValidationError("Pick a role.");
+  const surname =
+    (values.displayName.split(",")[0] ?? values.displayName).trim().split(/\s+/).at(-1) ??
+    values.displayName;
+  const initial = values.displayName.trim()[0]?.toUpperCase() ?? "";
+  const credentials = values.displayName.includes(",")
+    ? values.displayName.slice(values.displayName.indexOf(","))
+    : `, ${rateClass.shortName}`;
+  const [{ max } = { max: 0 }] = await db
+    .select({ max: sql<number>`coalesce(max(${staff.sortOrder}), 0)`.mapWith(Number) })
+    .from(staff);
+  const [created] = await db
+    .insert(staff)
+    .values({
+      branchId: input.branchId,
+      displayName: values.displayName,
+      shortName: `${initial}. ${surname}${credentials}`,
+      surname,
+      rateClassId: values.rateClassId,
+      sortOrder: max + 1,
+    })
+    .returning();
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "staff.create",
+    entity: "staff",
+    entityId: created!.id,
+    after: values,
+    ip: actor.ip,
+  });
+  let account: { userId: string; email: string } | null = null;
+  if (values.loginEmail) {
+    account = await createAccount(db, actor, {
+      name: values.displayName.split(",")[0]!.trim(),
+      email: values.loginEmail,
+      role: "therapist",
+      branchIds: [input.branchId],
+      staffId: created!.id,
+    });
+  }
+  return { staffId: created!.id, account };
+}
+
+export async function setStaffActive(
+  db: DbExecutor,
+  actor: Actor,
+  input: { id: string; active: boolean },
+) {
+  const [before] = await db.select().from(staff).where(eq(staff.id, input.id));
+  if (!before) throw new NotFoundError();
+  assertCan(actor, "settings:manage", { branchId: before.branchId });
+  await db.update(staff).set({ active: input.active }).where(eq(staff.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "staff.status",
+    entity: "staff",
+    entityId: input.id,
+    before: { active: before.active },
+    after: { active: input.active },
+    ip: actor.ip,
+  });
+}
+
+/** A new branch with its own receipt counter; the owner who adds it joins it. */
+export async function createBranch(db: DbExecutor, actor: Actor, raw: unknown) {
+  assertCan(actor, "settings:manage");
+  const input = branchInput.parse(raw);
+  const all = await db.select({ code: branches.code, name: branches.name }).from(branches);
+  if (all.some((b) => b.name.toLowerCase() === input.name.toLowerCase())) {
+    throw new ValidationError(`There is already a branch called ${input.name}.`);
+  }
+  const code = `B${all.length + 1}`;
+  const word = input.name
+    .replace(/^CRB\s+/i, "")
+    .replace(/[^A-Za-z]/g, "")
+    .toUpperCase();
+  const [created] = await db
+    .insert(branches)
+    .values({
+      code,
+      name: input.name,
+      location: input.location || "Not set",
+      receiptPrefix: `CRB${word.slice(0, 1) || code}`,
+    })
+    .returning();
+  await db.insert(receiptCounters).values({ branchId: created!.id, nextNumber: 1 });
+  await db.insert(userBranches).values({ userId: actor.userId, branchId: created!.id });
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "branch.create",
+    entity: "branch",
+    entityId: created!.id,
+    after: input,
+    ip: actor.ip,
+  });
+  return created!;
+}
+
+/** Opening days and hours for one branch. Existing bookings are not moved. */
+export async function updateBranchHours(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; values: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const values = hoursInput.parse(input.values);
+  const [before] = await db.select().from(branches).where(eq(branches.id, input.branchId));
+  if (!before) throw new NotFoundError();
+  const openDays = [...new Set(values.openDays)].sort();
+  await db
+    .update(branches)
+    .set({ openDays, opensAtHour: values.opensAtHour, closesAtHour: values.closesAtHour })
+    .where(eq(branches.id, input.branchId));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "branch.hours",
+    entity: "branch",
+    entityId: input.branchId,
+    before: {
+      openDays: before.openDays,
+      opensAtHour: before.opensAtHour,
+      closesAtHour: before.closesAtHour,
+    },
+    after: { openDays, opensAtHour: values.opensAtHour, closesAtHour: values.closesAtHour },
+    ip: actor.ip,
+  });
+}

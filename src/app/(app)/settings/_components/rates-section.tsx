@@ -3,7 +3,6 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { SectionHead } from "@/components/app/page-layout";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Button } from "@/components/ui/button";
@@ -20,34 +19,37 @@ import {
 import { formatPeso } from "@/lib/money";
 import { payrollLine } from "@/lib/payroll";
 import { SERVICE_BG } from "@/lib/services";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
+import { saveRatesAction } from "../actions";
 import { digitsOnly } from "./add-form";
 
-export function RatesSection() {
-  const { state, dispatch } = useDemoStore();
+export function RatesSection({ data }: { data: SettingsPageData }) {
+  const [pending, startTransition] = React.useTransition();
   const [draft, setDraft] = React.useState(() =>
     Object.fromEntries(
-      state.rateClasses.map((r) => [
+      data.rateClasses.map((r) => [
         r.id,
         { pesos: String(r.rateCentavos / 100), share: String(r.therapistSharePct) },
       ]),
     ),
   );
 
-  const save = () => {
-    for (const rateClass of state.rateClasses) {
-      const row = draft[rateClass.id]!;
-      dispatch({
-        type: "rateClass/update",
-        id: rateClass.id,
-        rateCentavos: Number(row.pesos || 0) * 100,
-        therapistSharePct: Math.min(100, Number(row.share || 0)),
-      });
-    }
-    toast.success("Rates saved", {
-      description: "New rates apply to sessions marked attended from now on.",
+  const save = () =>
+    startTransition(async () => {
+      const result = await saveRatesAction(
+        data.rateClasses.map((r) => ({
+          id: r.id,
+          ratePesos: Number(draft[r.id]!.pesos || 0),
+          therapistSharePct: Number(draft[r.id]!.share || 0),
+        })),
+      );
+      if (result.ok)
+        toast.success("Rates saved", {
+          description: "New rates apply to sessions marked attended from now on.",
+        });
+      else toast.error(result.error);
     });
-  };
 
   return (
     <>
@@ -55,7 +57,7 @@ export function RatesSection() {
         title="Rates and splits"
         description="What each role bills per session and how the fee is divided."
       >
-        <Button size="sm" onClick={save}>
+        <Button size="sm" onClick={save} disabled={pending}>
           Save changes
         </Button>
       </SectionHead>
@@ -70,7 +72,7 @@ export function RatesSection() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {state.rateClasses.map((rateClass) => {
+            {data.rateClasses.map((rateClass) => {
               const row = draft[rateClass.id]!;
               const share = Math.min(100, Number(row.share || 0));
               const line = payrollLine(1, Number(row.pesos || 0) * 100, share);
@@ -90,10 +92,10 @@ export function RatesSection() {
                       inputMode="numeric"
                       className="w-[120px]"
                       inputClassName="h-8"
-                      onChange={(event) =>
+                      onChange={(e) =>
                         setDraft({
                           ...draft,
-                          [rateClass.id]: { ...row, pesos: digitsOnly(event.target.value) },
+                          [rateClass.id]: { ...row, pesos: digitsOnly(e.target.value) },
                         })
                       }
                     />
@@ -106,14 +108,12 @@ export function RatesSection() {
                       inputMode="numeric"
                       className="w-[90px]"
                       inputClassName="h-8"
-                      onChange={(event) =>
+                      onChange={(e) =>
                         setDraft({
                           ...draft,
                           [rateClass.id]: {
                             ...row,
-                            share: String(
-                              Math.min(100, Number(digitsOnly(event.target.value) || 0)),
-                            ),
+                            share: String(Math.min(100, Number(digitsOnly(e.target.value) || 0))),
                           },
                         })
                       }

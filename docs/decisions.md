@@ -359,3 +359,39 @@ Removing a patient sets `deleted_at` after a confirmation that explains sessions
 ### D-060 (temporary): Booking and billing still use the demo store
 
 Patients now live in the database, but booking, the schedule, billing and the dialogs that change them still run on the Milestone 2 demo store until Milestones 7 to 9. Seed patients exist in both, so those screens keep working. A patient created in the database can't be booked yet: the booking dialog finds them, but the demo store rejects the booking. This resolves in Milestone 7.
+
+## Milestone 6: settings
+
+### D-061: Settings are owner-only and audit logged
+
+Every settings change goes through `src/server/services/settings.ts`, which asserts `settings:manage` and writes an audit entry with the before and after values. That covers:
+
+- rates and splits
+- session types: add, change the rate, remove, restore
+- staff: add, set active or inactive
+- branches: add
+- operating hours
+
+### D-062: Rate changes only affect future snapshots
+
+A rate class's rate and share are copied onto an appointment when it is marked attended (D-037), and a session type's rate is copied when it is booked. Changing either in settings never rewrites past payroll or booked fees. A database test checks this: total payroll before today is identical after a rate change, and the next session marked attended carries the new rate.
+
+### D-063: Removing a session type hides it
+
+Removed types keep their row (`active = false`), so past sessions still show their type. Adding a type with the same name brings the old one back. At least one type must stay active.
+
+### D-064: Staff load is computed from appointments
+
+Sessions are the attended sessions this month. Patients are distinct patients booked this month. Utilization is booked hours this month divided by the branch's open hours this month (open days × hours per day). The demo data covers a few weeks, so the numbers are lower than the mockup's illustrative ones.
+
+### D-065: Staff logins from the staff screen
+
+Adding a staff member with a login email creates a therapist account linked to that staff record (D-052). After the transaction commits, it emails a link to set a password, so a rolled-back save never sends one.
+
+### D-066: New branches get a receipt counter and the owner's membership
+
+A new branch gets the next code (`B3`), its own receipt prefix (`CRBT` for Toril) and counter, and the owner who adds it as a member, so it shows in their branch switcher. Editing a branch's name or location isn't in the mockup's flows and is left out.
+
+### D-067: Hours apply to new bookings only
+
+Changing opening days or hours never moves or cancels existing bookings. The booking rules (Milestone 7) read the branch's hours when a session is booked.

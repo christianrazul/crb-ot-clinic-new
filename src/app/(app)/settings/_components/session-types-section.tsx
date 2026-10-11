@@ -4,7 +4,6 @@ import { Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { useDemoStore } from "@/components/app/demo/demo-store";
 import { EmptyState } from "@/components/app/detail-bits";
 import { SectionHead } from "@/components/app/page-layout";
 import { SvcDot } from "@/components/app/svc-dot";
@@ -21,15 +20,46 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { SettingsPageData } from "@/server/loaders/settings-page";
 
+import {
+  addSessionTypeAction,
+  removeSessionTypeAction,
+  updateSessionTypeRateAction,
+} from "../actions";
 import { AddForm, digitsOnly } from "./add-form";
 
-export function SessionTypesSection() {
-  const { state, dispatch } = useDemoStore();
+/** Rate field that saves when it loses focus, not on every keystroke. */
+function RateField({ id, name, rateCentavos }: { id: string; name: string; rateCentavos: number }) {
+  const [value, setValue] = React.useState(String(rateCentavos / 100));
+  const [, startTransition] = React.useTransition();
+  return (
+    <InputGroup
+      prefix="₱"
+      aria-label={`${name} rate`}
+      value={value}
+      inputMode="numeric"
+      className="w-[120px]"
+      inputClassName="h-8"
+      onChange={(e) => setValue(digitsOnly(e.target.value))}
+      onBlur={() => {
+        if (Number(value || 0) * 100 === rateCentavos) return;
+        startTransition(async () => {
+          const result = await updateSessionTypeRateAction(id, Number(value || 0));
+          if (result.ok)
+            toast.success(`${name} rate saved`, { description: "Applies to new bookings." });
+          else toast.error(result.error);
+        });
+      }}
+    />
+  );
+}
+
+export function SessionTypesSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [rate, setRate] = React.useState("");
-  const types = state.sessionTypes.filter((t) => t.active);
+  const [pending, startTransition] = React.useTransition();
 
   return (
     <>
@@ -48,19 +78,20 @@ export function SessionTypesSection() {
           open={open}
           submitLabel="Add session type"
           onCancel={() => setOpen(false)}
-          onSubmit={() => {
-            const trimmed = name.trim();
-            if (!trimmed) return;
-            dispatch({
-              type: "sessionType/add",
-              name: trimmed,
-              rateCentavos: Number(rate || 0) * 100,
-            });
-            setName("");
-            setRate("");
-            setOpen(false);
-            toast.success(`${trimmed} added`);
-          }}
+          onSubmit={() =>
+            startTransition(async () => {
+              const trimmed = name.trim();
+              const result = await addSessionTypeAction({
+                name: trimmed,
+                ratePesos: Number(rate || 0),
+              });
+              if (!result.ok) return void toast.error(result.error);
+              setName("");
+              setRate("");
+              setOpen(false);
+              toast.success(`${trimmed} added`);
+            })
+          }
         >
           <div className="grid min-w-[200px] flex-1 gap-1.5">
             <Label htmlFor="st-name">Name</Label>
@@ -84,7 +115,7 @@ export function SessionTypesSection() {
             />
           </div>
         </AddForm>
-        {types.length ? (
+        {data.sessionTypes.length ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -96,7 +127,7 @@ export function SessionTypesSection() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {types.map((type) => (
+              {data.sessionTypes.map((type) => (
                 <TableRow key={type.id}>
                   <TableCell>
                     <span className="flex items-center gap-2 font-medium">
@@ -105,20 +136,11 @@ export function SessionTypesSection() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    <InputGroup
-                      prefix="₱"
-                      aria-label={`${type.name} rate`}
-                      value={String(type.rateCentavos / 100)}
-                      inputMode="numeric"
-                      className="w-[120px]"
-                      inputClassName="h-8"
-                      onChange={(e) =>
-                        dispatch({
-                          type: "sessionType/update",
-                          id: type.id,
-                          rateCentavos: Number(digitsOnly(e.target.value) || 0) * 100,
-                        })
-                      }
+                    <RateField
+                      key={type.rateCentavos}
+                      id={type.id}
+                      name={type.name}
+                      rateCentavos={type.rateCentavos}
                     />
                   </TableCell>
                   <TableCell className="text-right">
@@ -127,14 +149,19 @@ export function SessionTypesSection() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          disabled={pending}
                           className="text-muted-foreground hover:bg-danger-soft hover:text-danger"
                           aria-label={`Remove ${type.name}`}
-                          onClick={() => {
-                            dispatch({ type: "sessionType/remove", id: type.id });
-                            toast.success(`${type.name} removed`, {
-                              description: "Past sessions of this type keep it.",
-                            });
-                          }}
+                          onClick={() =>
+                            startTransition(async () => {
+                              const result = await removeSessionTypeAction(type.id);
+                              if (result.ok)
+                                toast.success(`${type.name} removed`, {
+                                  description: "Past sessions of this type keep it.",
+                                });
+                              else toast.error(result.error);
+                            })
+                          }
                         >
                           <Trash2 />
                         </Button>
