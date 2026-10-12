@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Ban,
   CalendarPlus,
   ChevronLeft,
   Download,
@@ -14,6 +15,7 @@ import {
   Phone,
   Plus,
   Receipt,
+  SlidersHorizontal,
   Trash2,
   UserRound,
   UserX,
@@ -22,7 +24,9 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { EmptyState, Field } from "@/components/app/detail-bits";
+import { voidCreditEntryAction } from "@/app/(app)/billing/actions";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
+import { ReasonDialog } from "@/components/app/dialogs/reason-dialog";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { useViewer } from "@/components/app/shell/viewer-context";
 import { StatusBadge } from "@/components/app/status-badge";
@@ -67,6 +71,7 @@ import { cn } from "@/lib/utils";
 import type { PatientDetailData } from "@/server/loaders/patients-page";
 
 import { anonymizePatientAction, deletePatientAction, setPatientStatusAction } from "../actions";
+import { AdjustCreditDialog } from "./adjust-credit-dialog";
 import { PatientFormDialog, type StaffOption } from "./patient-form-dialog";
 
 export type PatientTab = "overview" | "sessions" | "credit";
@@ -88,6 +93,8 @@ export function PatientDetail({
   tab,
   onTabChange,
   canWrite,
+  canEdit,
+  isTherapist,
   canSeeMoney,
   staffOptions,
 }: {
@@ -95,6 +102,9 @@ export function PatientDetail({
   tab: PatientTab;
   onTabChange: (tab: PatientTab) => void;
   canWrite: boolean;
+  /** Edit details only: therapists, for their own patients. */
+  canEdit: boolean;
+  isTherapist: boolean;
   canSeeMoney: boolean;
   staffOptions: StaffOption[];
 }) {
@@ -103,6 +113,12 @@ export function PatientDetail({
   const [editing, setEditing] = React.useState(false);
   const [confirmRemove, setConfirmRemove] = React.useState(false);
   const [confirmAnonymize, setConfirmAnonymize] = React.useState(false);
+  const [adjusting, setAdjusting] = React.useState(false);
+  const [voidingEntry, setVoidingEntry] = React.useState<{
+    id: string;
+    description: string;
+    amountCentavos: number;
+  } | null>(null);
   const [typedName, setTypedName] = React.useState("");
   const [anonymizeError, setAnonymizeError] = React.useState<string | null>(null);
   const isOwner = useViewer().role === "superadmin";
@@ -187,6 +203,17 @@ export function PatientDetail({
             </Badge>
           </div>
         </div>
+        {!canWrite && canEdit && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="-mr-1 text-muted-foreground"
+            aria-label="Edit details"
+            onClick={() => setEditing(true)}
+          >
+            <Pencil />
+          </Button>
+        )}
         {canWrite && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -488,25 +515,36 @@ export function PatientDetail({
                     : "No advance payment on file"}
                 </div>
               </div>
-              <Button
-                size="sm"
-                className="ml-auto"
-                onClick={() =>
-                  openDialog({
-                    kind: "advance",
-                    patient: { id: patient.id, name, service: patient.service },
-                  })
-                }
-              >
-                <Plus /> Record advance
-              </Button>
+              <div className="ml-auto flex flex-col gap-1.5">
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    openDialog({
+                      kind: "advance",
+                      patient: { id: patient.id, name, service: patient.service },
+                    })
+                  }
+                >
+                  <Plus /> Record advance
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setAdjusting(true)}>
+                  <SlidersHorizontal /> Adjust balance
+                </Button>
+              </div>
             </div>
             {ledger.length ? (
               <div className="mt-3">
                 {ledger.map((entry) => {
                   const isTopUp = entry.amountCentavos > 0;
+                  const voided = Boolean(entry.voidedAt);
                   return (
-                    <div key={entry.id} className="flex gap-3 border-t px-5 py-3 first:border-t-0">
+                    <div
+                      key={entry.id}
+                      className={cn(
+                        "flex gap-3 border-t px-5 py-3 first:border-t-0",
+                        voided && "opacity-60",
+                      )}
+                    >
                       <span
                         className={cn(
                           "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
@@ -520,11 +558,17 @@ export function PatientDetail({
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-2">
-                          <span className="truncate text-sm font-medium">{entry.description}</span>
+                          <span
+                            className={cn("truncate text-sm font-medium", voided && "line-through")}
+                          >
+                            {entry.description}
+                          </span>
+                          {voided && <Badge variant="muted">Voided</Badge>}
                           <span
                             className={cn(
                               "ml-auto text-sm font-semibold whitespace-nowrap tabular-nums",
-                              isTopUp ? "text-success" : "text-foreground",
+                              isTopUp && !voided ? "text-success-strong" : "text-foreground",
+                              voided && "line-through",
                             )}
                           >
                             {isTopUp
@@ -547,7 +591,55 @@ export function PatientDetail({
                             {entry.notes}
                           </p>
                         )}
+                        {voided && entry.voidReason && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            Voided {formatManila(new Date(entry.voidedAt!), "date")}:{" "}
+                            {entry.voidReason}
+                          </p>
+                        )}
                       </div>
+                      {!voided && entry.type !== "deduction" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="-mr-2 text-muted-foreground"
+                              aria-label={`Actions for ${entry.description} ${formatManila(new Date(entry.createdAt), "date")}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            {entry.type === "top_up" && (
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  openDialog({
+                                    kind: "advance",
+                                    patient: { id: patient.id, name, service: patient.service },
+                                    correcting: {
+                                      entryId: entry.id,
+                                      amountCentavos: entry.amountCentavos,
+                                      method: entry.method,
+                                      referenceNo: entry.referenceNo,
+                                      receiptNo: entry.receiptNo,
+                                      notes: entry.notes,
+                                    },
+                                  })
+                                }
+                              >
+                                <Pencil /> Edit
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              className="text-danger focus:text-danger"
+                              onSelect={() => setVoidingEntry(entry)}
+                            >
+                              <Ban /> Void
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                   );
                 })}
@@ -565,6 +657,28 @@ export function PatientDetail({
           onOpenChange={setEditing}
           staffOptions={staffOptions}
           existing={detail}
+          assignedToMe={isTherapist}
+        />
+      )}
+      {adjusting && (
+        <AdjustCreditDialog
+          patientId={patient.id}
+          patientName={name}
+          balanceCentavos={balance}
+          onClose={() => setAdjusting(false)}
+        />
+      )}
+      {voidingEntry && (
+        <ReasonDialog
+          title={`Void this ${formatPeso(Math.abs(voidingEntry.amountCentavos))} entry?`}
+          description={`"${voidingEntry.description}" stays on the ledger, marked voided, and stops counting toward ${patient.firstName}'s balance. If the credit was already spent on sessions, void those payments first.`}
+          confirmLabel="Void entry"
+          onClose={() => setVoidingEntry(null)}
+          onConfirm={async (reason) => {
+            const result = await voidCreditEntryAction(voidingEntry.id, reason);
+            if (result.ok) toast.success("Entry voided");
+            return result.ok ? { ok: true } : result;
+          }}
         />
       )}
       <Dialog open={confirmRemove} onOpenChange={setConfirmRemove}>

@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { check, date, index, integer, pgTable, text } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  check,
+  date,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 import { users } from "./auth";
 import { branches, patients } from "./clinic";
@@ -7,14 +17,17 @@ import { createdAt, id } from "./columns";
 import { creditEntryTypeEnum, paymentMethodEnum } from "./enums";
 import { appointments } from "./scheduling";
 
-/** One payment per appointment. Rows are never updated or deleted. */
+/**
+ * One live payment per appointment. Rows are never deleted or edited: a
+ * mistake is voided (once, with a reason) and, for a correction, a new payment
+ * replaces it (D-121).
+ */
 export const payments = pgTable(
   "payments",
   {
     id: id(),
     appointmentId: text()
       .notNull()
-      .unique()
       .references(() => appointments.id),
     patientId: text()
       .notNull()
@@ -33,8 +46,16 @@ export const payments = pgTable(
       .notNull()
       .references(() => users.id),
     createdAt: createdAt(),
+    /** The payment this one corrects, if any. */
+    replacesPaymentId: text().references((): AnyPgColumn => payments.id),
+    voidedAt: timestamp({ withTimezone: true, mode: "date" }),
+    voidedByUserId: text().references(() => users.id),
+    voidReason: text(),
   },
   (t) => [
+    uniqueIndex("payments_one_live_per_appointment")
+      .on(t.appointmentId)
+      .where(sql`${t.voidedAt} is null`),
     index().on(t.patientId),
     index().on(t.branchId, t.createdAt),
     index().on(t.receivedByUserId),
@@ -57,7 +78,10 @@ export const payments = pgTable(
   ],
 );
 
-/** Advance credit. The balance is always the sum of the rows. Append-only. */
+/**
+ * Advance credit. The balance is always the sum of the live (not voided) rows.
+ * Append-only apart from a one-time void (D-121).
+ */
 export const creditLedger = pgTable(
   "credit_ledger",
   {
@@ -77,6 +101,11 @@ export const creditLedger = pgTable(
       .notNull()
       .references(() => users.id),
     createdAt: createdAt(),
+    /** The entry this one corrects, if any. */
+    replacesEntryId: text().references((): AnyPgColumn => creditLedger.id),
+    voidedAt: timestamp({ withTimezone: true, mode: "date" }),
+    voidedByUserId: text().references(() => users.id),
+    voidReason: text(),
   },
   (t) => [
     index().on(t.patientId, t.createdAt),

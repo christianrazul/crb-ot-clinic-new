@@ -13,6 +13,8 @@ export type Action =
   | "appointment:status"
   | "patient:read"
   | "patient:write"
+  | "patient:create"
+  | "patient:edit"
   | "patient:export"
   | "patient:anonymize"
   | "note:read"
@@ -21,6 +23,7 @@ export type Action =
   | "payment:collect"
   | "credit:read"
   | "credit:top-up"
+  | "billing:correct"
   | "payroll:read"
   | "expense:manage"
   | "settings:manage"
@@ -33,7 +36,12 @@ const GRANTS: Record<Action, Role[]> = {
   "appointment:book": ["superadmin", "secretary"],
   "appointment:status": ["superadmin", "secretary"],
   "patient:read": ["superadmin", "secretary", "therapist"],
+  /** Set patients inactive, remove them, book them, record their money. */
   "patient:write": ["superadmin", "secretary"],
+  /** Therapists add patients too; theirs are assigned to them. */
+  "patient:create": ["superadmin", "secretary", "therapist"],
+  /** Edit a patient's details; therapists only their own patients. */
+  "patient:edit": ["superadmin", "secretary", "therapist"],
   "patient:export": ["superadmin"],
   "patient:anonymize": ["superadmin"],
   "note:read": ["superadmin", "secretary", "therapist"],
@@ -42,6 +50,8 @@ const GRANTS: Record<Action, Role[]> = {
   "payment:collect": ["superadmin", "secretary"],
   "credit:read": ["superadmin", "secretary"],
   "credit:top-up": ["superadmin", "secretary"],
+  /** Void or correct a payment or credit entry; always with a reason, always audited. */
+  "billing:correct": ["superadmin", "secretary"],
   "payroll:read": ["superadmin"],
   "expense:manage": ["superadmin"],
   "settings:manage": ["superadmin"],
@@ -55,6 +65,7 @@ const OWN_ONLY_FOR_THERAPISTS = new Set<Action>([
   "patient:read",
   "note:read",
   "note:write",
+  "patient:edit",
 ]);
 
 export type Resource = {

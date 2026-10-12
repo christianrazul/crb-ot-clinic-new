@@ -1,9 +1,14 @@
 "use client";
 
-import { Check, HandCoins } from "lucide-react";
+import { Ban, Check, HandCoins, MoreHorizontal, Pencil } from "lucide-react";
+import * as React from "react";
+import { toast } from "sonner";
+
+import { voidPaymentAction } from "@/app/(app)/billing/actions";
 
 import { EmptyState } from "@/components/app/detail-bits";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
+import { ReasonDialog } from "@/components/app/dialogs/reason-dialog";
 import { Page, PageHeader } from "@/components/app/page-layout";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { StatStrip } from "@/components/app/stat-strip";
@@ -11,6 +16,12 @@ import { SvcDot } from "@/components/app/svc-dot";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -29,6 +40,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export function BillingScreen({ data, branchName }: { data: BillingPageData; branchName: string }) {
   const { openDialog } = useDialogs();
   const { items, totals } = data;
+  const [voiding, setVoiding] = React.useState<(typeof items)[number] | null>(null);
 
   return (
     <Page>
@@ -141,12 +153,46 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
                   </TableCell>
                   <TableCell className="text-right">
                     {item.paid ? (
-                      <Badge
-                        variant="success"
-                        title={item.receiptNo ? `Receipt ${item.receiptNo}` : undefined}
-                      >
-                        <Check /> Paid
-                      </Badge>
+                      <span className="inline-flex items-center gap-1">
+                        <Badge
+                          variant="success"
+                          title={item.receiptNo ? `Receipt ${item.receiptNo}` : undefined}
+                        >
+                          <Check /> Paid
+                        </Badge>
+                        {item.paymentId && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-muted-foreground"
+                                aria-label={`Payment actions for ${item.patientName}`}
+                              >
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  openDialog({
+                                    kind: "payment-correct",
+                                    paymentId: item.paymentId!,
+                                  })
+                                }
+                              >
+                                <Pencil /> Edit payment
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-danger focus:text-danger"
+                                onSelect={() => setVoiding(item)}
+                              >
+                                <Ban /> Void payment
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </span>
                     ) : (
                       <Button
                         size="sm"
@@ -168,6 +214,19 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
           />
         )}
       </Card>
+      {voiding && (
+        <ReasonDialog
+          title={`Void ${voiding.patientName}'s payment?`}
+          description={`Receipt ${voiding.receiptNo} stays on record, marked voided. The session shows as unpaid again and any advance credit it used goes back to the balance.`}
+          confirmLabel="Void payment"
+          onClose={() => setVoiding(null)}
+          onConfirm={async (reason) => {
+            const result = await voidPaymentAction(voiding.paymentId, reason);
+            if (result.ok) toast.success(`Receipt ${voiding.receiptNo} voided`);
+            return result.ok ? { ok: true } : result;
+          }}
+        />
+      )}
     </Page>
   );
 }

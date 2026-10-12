@@ -12,6 +12,7 @@ import { assertCan, can } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
+import { livePayment } from "@/server/db/queries/billing";
 import { listSessionTypes } from "@/server/db/queries/session-types";
 import {
   appointmentSeries,
@@ -77,7 +78,7 @@ async function appointmentsInRange(
     .innerJoin(sessionTypes, eq(appointments.sessionTypeId, sessionTypes.id))
     .innerJoin(staff, eq(appointments.staffId, staff.id))
     .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
-    .leftJoin(payments, eq(payments.appointmentId, appointments.id))
+    .leftJoin(payments, and(eq(payments.appointmentId, appointments.id), livePayment))
     .where(
       and(
         eq(appointments.branchId, branchId),
@@ -493,7 +494,7 @@ export async function getAppointmentDetail(db: DbExecutor, actor: Actor, appoint
     .innerJoin(staff, eq(appointments.staffId, staff.id))
     .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
     .innerJoin(sessionTypes, eq(appointments.sessionTypeId, sessionTypes.id))
-    .leftJoin(payments, eq(payments.appointmentId, appointments.id))
+    .leftJoin(payments, and(eq(payments.appointmentId, appointments.id), livePayment))
     .leftJoin(users, eq(users.id, appointments.statusChangedByUserId))
     .where(eq(appointments.id, appointmentId));
   if (!row) throw new NotFoundError();

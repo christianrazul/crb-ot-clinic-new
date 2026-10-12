@@ -11,6 +11,7 @@ import type { Actor } from "@/server/auth/actor";
 import { assertCan } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
+import { liveCredit, livePayment } from "@/server/db/queries/billing";
 import {
   appointments,
   creditLedger,
@@ -51,6 +52,7 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
     .where(
       and(
         eq(payments.branchId, branchId),
+        livePayment,
         gte(payments.createdAt, from),
         lt(payments.createdAt, to),
       ),
@@ -65,6 +67,7 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
       and(
         eq(patients.branchId, branchId),
         eq(creditLedger.type, "top_up"),
+        liveCredit,
         gte(creditLedger.createdAt, from),
         lt(creditLedger.createdAt, to),
       ),

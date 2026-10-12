@@ -76,6 +76,8 @@ export async function loadPatientsPage(session: ShellSession, params: PatientLis
     activeCount,
     staffOptions,
     canWrite: can(actor, "patient:write", { branchId: branch.id }),
+    canCreate: can(actor, "patient:create", { branchId: branch.id }),
+    isTherapist: actor.role === "therapist",
     canSeeMoney: can(actor, "credit:read", { branchId: branch.id }),
   };
 }

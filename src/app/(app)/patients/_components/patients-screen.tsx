@@ -75,7 +75,7 @@ export function PatientsScreen({
         title={isTherapist ? "My patients" : "Patients"}
         description={`${data.activeCount} active patients at ${branchName}`}
       >
-        {data.canWrite && (
+        {data.canCreate && (
           <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
             <UserPlus /> Add patient
           </Button>
@@ -278,6 +278,8 @@ export function PatientsScreen({
             tab={params.tab === "credit" && !data.canSeeMoney ? "overview" : params.tab}
             onTabChange={(tab) => setParams({ tab })}
             canWrite={data.canWrite}
+            canEdit={data.canCreate}
+            isTherapist={data.isTherapist}
             canSeeMoney={data.canSeeMoney}
             staffOptions={data.staffOptions}
           />
@@ -288,6 +290,7 @@ export function PatientsScreen({
           open={creating}
           onOpenChange={setCreating}
           staffOptions={data.staffOptions}
+          assignedToMe={data.isTherapist}
           onSaved={(id) => setParams({ patient: id, tab: undefined })}
         />
       )}

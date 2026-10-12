@@ -1,23 +1,27 @@
 import "server-only";
 
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
 import { creditLedger, payments, receiptCounters, branches } from "../schema";
 
+/** Voided payments and credit entries stay on record but count for nothing (D-121). */
+export const livePayment = isNull(payments.voidedAt);
+export const liveCredit = isNull(creditLedger.voidedAt);
+
 export type PaymentRow = typeof payments.$inferSelect;
 export type CreditEntryRow = typeof creditLedger.$inferSelect;
 
-/** The balance is always the sum of the ledger. */
+/** The balance is always the sum of the live ledger rows. */
 export async function creditBalance(db: DbExecutor, patientId: string): Promise<number> {
   const [row] = await db
     .select({ total: sql<string>`coalesce(sum(${creditLedger.amountCentavos}), 0)` })
     .from(creditLedger)
-    .where(eq(creditLedger.patientId, patientId));
+    .where(and(eq(creditLedger.patientId, patientId), liveCredit));
   return Number(row?.total ?? 0);
 }
 
-/** Ledger rows oldest first. */
+/** Ledger rows oldest first, voided ones included (the UI shows them struck through). */
 export function creditEntries(db: DbExecutor, patientId: string) {
   return db
     .select()
@@ -27,7 +31,10 @@ export function creditEntries(db: DbExecutor, patientId: string) {
 }
 
 export async function paymentForAppointment(db: DbExecutor, appointmentId: string) {
-  const [row] = await db.select().from(payments).where(eq(payments.appointmentId, appointmentId));
+  const [row] = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.appointmentId, appointmentId), livePayment));
   return row ?? null;
 }
 

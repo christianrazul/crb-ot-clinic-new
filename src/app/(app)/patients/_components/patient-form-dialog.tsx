@@ -70,12 +70,15 @@ export function PatientFormDialog({
   staffOptions,
   existing,
   onSaved,
+  assignedToMe = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   staffOptions: StaffOption[];
   existing?: PatientDetailData;
   onSaved?: (patientId: string) => void;
+  /** A therapist's form: no assignment fields; the server assigns the patient to them. */
+  assignedToMe?: boolean;
 }) {
   const form = useForm<PatientFormInput, unknown, PatientFormValues>({
     resolver: zodResolver(patientFormSchema),
@@ -187,68 +190,78 @@ export function PatientFormDialog({
               </div>
               {field("enrolledOn", "Enrolled on", { type: "date" })}
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="pf-primary">Primary therapist</Label>
-              <Controller
-                control={form.control}
-                name="primaryStaffId"
-                render={({ field: f }) => (
-                  <Select
-                    value={f.value || NONE}
-                    onValueChange={(v) => f.onChange(v === NONE ? "" : v)}
-                  >
-                    <SelectTrigger id="pf-primary">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>Unassigned</SelectItem>
-                      {staffOptions.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          <span className="flex items-center gap-2">
-                            <SvcDot service={s.service} />
-                            {s.displayName}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-            </div>
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Backup therapists</legend>
-              <Controller
-                control={form.control}
-                name="backupStaffIds"
-                render={({ field: f }) => (
-                  <div className="grid grid-cols-2 gap-2">
-                    {staffOptions
-                      .filter((s) => s.id !== primary)
-                      .map((s) => {
-                        const checked = (f.value ?? []).includes(s.id);
-                        return (
-                          <label key={s.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(next) =>
-                                f.onChange(
-                                  next
-                                    ? [...(f.value ?? []), s.id]
-                                    : (f.value ?? []).filter((v) => v !== s.id),
-                                )
-                              }
-                            />
-                            {s.displayName}
-                          </label>
-                        );
-                      })}
-                  </div>
-                )}
-              />
-              {errors.backupStaffIds && (
-                <p className="text-xs text-danger-strong">{errors.backupStaffIds.message}</p>
-              )}
-            </fieldset>
+            {assignedToMe ? (
+              <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                {existing
+                  ? "The front desk sets who treats this patient."
+                  : "This patient will be assigned to you as their primary therapist."}
+              </p>
+            ) : (
+              <>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="pf-primary">Primary therapist</Label>
+                  <Controller
+                    control={form.control}
+                    name="primaryStaffId"
+                    render={({ field: f }) => (
+                      <Select
+                        value={f.value || NONE}
+                        onValueChange={(v) => f.onChange(v === NONE ? "" : v)}
+                      >
+                        <SelectTrigger id="pf-primary">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE}>Unassigned</SelectItem>
+                          {staffOptions.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              <span className="flex items-center gap-2">
+                                <SvcDot service={s.service} />
+                                {s.displayName}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <fieldset className="grid gap-2">
+                  <legend className="mb-1 text-sm font-medium">Backup therapists</legend>
+                  <Controller
+                    control={form.control}
+                    name="backupStaffIds"
+                    render={({ field: f }) => (
+                      <div className="grid grid-cols-2 gap-2">
+                        {staffOptions
+                          .filter((s) => s.id !== primary)
+                          .map((s) => {
+                            const checked = (f.value ?? []).includes(s.id);
+                            return (
+                              <label key={s.id} className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(next) =>
+                                    f.onChange(
+                                      next
+                                        ? [...(f.value ?? []), s.id]
+                                        : (f.value ?? []).filter((v) => v !== s.id),
+                                    )
+                                  }
+                                />
+                                {s.displayName}
+                              </label>
+                            );
+                          })}
+                      </div>
+                    )}
+                  />
+                  {errors.backupStaffIds && (
+                    <p className="text-xs text-danger-strong">{errors.backupStaffIds.message}</p>
+                  )}
+                </fieldset>
+              </>
+            )}
             <div className="grid gap-1.5">
               <Label htmlFor="pf-goals">Goals and notes</Label>
               <Textarea id="pf-goals" rows={3} {...form.register("goalsNotes")} />

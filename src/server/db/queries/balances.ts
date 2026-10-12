@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
 import { appointments, payments } from "../schema";
+import { livePayment } from "./billing";
 
 /**
  * What each patient owes: attended sessions before `before` with no payment.
@@ -17,7 +18,7 @@ export async function owedByPatient(db: DbExecutor, patientIds: string[], before
       owed: sql<string>`sum(${appointments.feeCentavos})`,
     })
     .from(appointments)
-    .leftJoin(payments, eq(payments.appointmentId, appointments.id))
+    .leftJoin(payments, and(eq(payments.appointmentId, appointments.id), livePayment))
     .where(
       and(
         inArray(appointments.patientId, patientIds),

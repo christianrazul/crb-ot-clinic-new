@@ -241,8 +241,14 @@ export async function createPatient(
   actor: Actor,
   input: { branchId: string; values: unknown },
 ) {
-  assertCan(actor, "patient:write", { branchId: input.branchId });
+  assertCan(actor, "patient:create", { branchId: input.branchId });
   const values = patientFormSchema.parse(input.values);
+  if (actor.role === "therapist") {
+    // A therapist's new patient is theirs: primary therapist, no backups.
+    if (!actor.staffId) throw new ForbiddenError();
+    values.primaryStaffId = actor.staffId;
+    values.backupStaffIds = [];
+  }
   await assertStaffAtBranch(
     db,
     input.branchId,
@@ -271,8 +277,20 @@ export async function updatePatient(
 ) {
   const existing = await getPatient(db, input.patientId);
   if (!existing) throw new NotFoundError();
-  assertCan(actor, "patient:write", { branchId: existing.patient.branchId });
   const values = patientFormSchema.parse(input.values);
+  if (actor.role === "therapist") {
+    // Their own patients only, and who treats the patient stays as the desk set it.
+    // Someone else's patient looks missing, so ids can't be probed.
+    if (!(await patientIsVisibleTo(db, actor, existing.patient))) throw new NotFoundError();
+    assertCan(actor, "patient:edit", {
+      branchId: existing.patient.branchId,
+      ownedByActor: true,
+    });
+    values.primaryStaffId = existing.patient.primaryStaffId ?? "";
+    values.backupStaffIds = existing.backupStaffIds;
+  } else {
+    assertCan(actor, "patient:edit", { branchId: existing.patient.branchId });
+  }
   await assertStaffAtBranch(
     db,
     existing.patient.branchId,

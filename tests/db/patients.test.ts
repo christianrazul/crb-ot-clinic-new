@@ -120,11 +120,13 @@ describe("patient CRUD", () => {
       expect(hits).toHaveLength(0);
     }));
 
-  it("therapists cannot create, edit or deactivate patients", () =>
+  it("therapists add patients (assigned to them) but cannot deactivate them", () =>
     inRollback(async (tx) => {
-      await expect(
-        createPatient(tx, ACTORS.therapist, { branchId: "br_bangkal", values: newPatient }),
-      ).rejects.toBeInstanceOf(ForbiddenError);
+      const created = await createPatient(tx, ACTORS.therapist, {
+        branchId: "br_bangkal",
+        values: newPatient,
+      });
+      expect(created.primaryStaffId).toBe("stf_delarosa");
       await expect(
         setPatientStatus(tx, ACTORS.therapist, { patientId: "pat_01", status: "inactive" }),
       ).rejects.toBeInstanceOf(ForbiddenError);

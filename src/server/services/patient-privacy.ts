@@ -77,6 +77,8 @@ export async function exportPatientData(db: DbExecutor, actor: Actor, patientId:
         method: payments.method,
         referenceNo: payments.referenceNo,
         createdAt: payments.createdAt,
+        voidedAt: payments.voidedAt,
+        voidReason: payments.voidReason,
       })
       .from(payments)
       .where(eq(payments.patientId, patientId))
@@ -90,6 +92,8 @@ export async function exportPatientData(db: DbExecutor, actor: Actor, patientId:
         referenceNo: creditLedger.referenceNo,
         receiptNo: creditLedger.receiptNo,
         createdAt: creditLedger.createdAt,
+        voidedAt: creditLedger.voidedAt,
+        voidReason: creditLedger.voidReason,
       })
       .from(creditLedger)
       .where(eq(creditLedger.patientId, patientId))

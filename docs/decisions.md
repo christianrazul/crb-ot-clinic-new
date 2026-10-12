@@ -686,3 +686,23 @@ Corrects D-037 and D-117. The clinic pays therapists a percentage of what the se
 - Payroll's Rate column becomes Share (and "Varies" if the share changed mid-period); the CSV has "Share (%)".
 
 Migration 0004 drops the unused role rate and re-bases any session already marked attended on its own fee.
+
+### D-120: Therapists add patients
+
+Therapists can add patients from My patients. A therapist's new patient is assigned to them as primary therapist (with no backups), so it appears in their list straight away; the form shows a note instead of the therapist fields, and the server enforces it whatever the browser sends. They can also edit the details of their own patients (name, birth date, diagnosis, goals, guardian), but not who treats them, and they can't set patients inactive, remove, book or anonymize them. Someone else's patient looks missing to them, as before. Credit, balances, "owes" and payments stay hidden: the server never sends them to a therapist.
+
+Permissions: `patient:create` and `patient:edit` (therapists: own patients only) are new; `patient:write` keeps status, removal and booking for the owner and the desk.
+
+### D-121: Correcting payments and credit without deleting
+
+Payments and credit entries stay append-only (D-047): nothing is edited in place or deleted. Instead, the owner and the front desk (`billing:correct`) can:
+
+- **Void a payment.** The session shows as unpaid again, any credit it used goes back to the balance, and the receipt number stays on record as voided. It can then be collected again.
+- **Edit a payment.** The old one is voided and the corrected one is recorded with a new receipt number, linked to it (`replaces_payment_id`).
+- **Void an advance or an adjustment**, if the credit hasn't been spent. Credit spent on a session is corrected by voiding or editing that session's payment.
+- **Edit an advance.** The old entry is voided and replaced, if the balance stays at ₱0 or more.
+- **Adjust a balance by hand**, adding or removing credit with a reason (an `adjustment` entry). The balance can't go below ₱0.
+
+Every void needs a reason and records who and when. Voided entries stay visible, struck through, on the patient's ledger. Balances, billing, owed amounts, notifications, dashboard income and exports count only live rows.
+
+Postgres enforces it: the append-only triggers now use `void_once_guard()`, which allows exactly one update per row, from not voided to voided, with a user and a non-blank reason, and no other column changed. Deletes are still refused. "One payment per session" is now a unique index over live payments only.

@@ -6,7 +6,7 @@ import { fromManilaLocal } from "@/lib/dates";
 import type { Actor } from "@/server/auth/actor";
 import { assertCan } from "@/server/auth/permissions";
 import type { DbExecutor } from "@/server/db/client";
-import { creditBalance, creditEntries } from "@/server/db/queries/billing";
+import { creditBalance, creditEntries, livePayment } from "@/server/db/queries/billing";
 import { getPatient } from "@/server/db/queries/patients";
 import { appointments, payments } from "@/server/db/schema";
 
@@ -28,7 +28,7 @@ export async function listBillingDay(
   const rows = await db
     .select({ appointment: appointments, payment: payments })
     .from(appointments)
-    .leftJoin(payments, eq(payments.appointmentId, appointments.id))
+    .leftJoin(payments, and(eq(payments.appointmentId, appointments.id), livePayment))
     .where(
       and(
         eq(appointments.branchId, input.branchId),

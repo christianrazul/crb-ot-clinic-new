@@ -3,7 +3,11 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { getCreditBalanceAction, recordTopUpAction } from "@/app/(app)/billing/actions";
+import {
+  correctTopUpAction,
+  getCreditBalanceAction,
+  recordTopUpAction,
+} from "@/app/(app)/billing/actions";
 import { SummaryRow } from "@/components/app/detail-bits";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { Button } from "@/components/ui/button";
@@ -38,24 +42,43 @@ const PACKAGES = [
 const OT_SESSION_CENTAVOS = 70_000;
 
 type Picked = { id: string; name: string; service: ServiceKey };
+/** An advance payment being edited: it is voided and replaced by the corrected one. */
+export type TopUpCorrection = {
+  entryId: string;
+  amountCentavos: number;
+  method: PaymentMethod | null;
+  referenceNo: string | null;
+  receiptNo: string;
+  notes: string | null;
+};
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Preselected and locked, when opened from a patient record. */
   patient?: Picked;
   today: string;
+  correcting?: TopUpCorrection;
 };
 
 /** Advance payment: non-refundable credit added to the patient's ledger. */
-export function AdvancePaymentDialog({ open, onOpenChange, patient: locked, today }: Props) {
+export function AdvancePaymentDialog({
+  open,
+  onOpenChange,
+  patient: locked,
+  today,
+  correcting,
+}: Props) {
   const [patient, setPatient] = React.useState<Picked | null>(locked ?? null);
   const [current, setCurrent] = React.useState<number | null>(null);
   const [query, setQuery] = React.useState("");
-  const [amountText, setAmountText] = React.useState("");
-  const [method, setMethod] = React.useState<PaymentMethod>("cash");
-  const [referenceNo, setReferenceNo] = React.useState("");
-  const [receiptNo, setReceiptNo] = React.useState("");
-  const [notes, setNotes] = React.useState("");
+  const [amountText, setAmountText] = React.useState(
+    correcting ? String(correcting.amountCentavos / 100) : "",
+  );
+  const [method, setMethod] = React.useState<PaymentMethod>(correcting?.method ?? "cash");
+  const [referenceNo, setReferenceNo] = React.useState(correcting?.referenceNo ?? "");
+  const [receiptNo, setReceiptNo] = React.useState(correcting?.receiptNo ?? "");
+  const [notes, setNotes] = React.useState(correcting?.notes ?? "");
+  const [reason, setReason] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
@@ -72,41 +95,78 @@ export function AdvancePaymentDialog({ open, onOpenChange, patient: locked, toda
   }, [patient]);
 
   const amount = amountText ? (pesosToCentavos(amountText) ?? 0) : 0;
-  const balance = current ?? 0;
+  // When editing, the entry being replaced no longer counts.
+  const balance = (current ?? 0) - (correcting?.amountCentavos ?? 0);
   const isCash = method === "cash";
   const canConfirm =
-    Boolean(patient) && amount > 0 && (isCash || referenceNo.trim().length > 0) && !pending;
+    Boolean(patient) &&
+    amount > 0 &&
+    (isCash || referenceNo.trim().length > 0) &&
+    (!correcting || reason.trim().length >= 3) &&
+    !pending;
 
   const confirm = () =>
     startTransition(async () => {
       if (!patient) return;
       setError(null);
-      const result = await recordTopUpAction({
+      const values = {
         patientId: patient.id,
         amountCentavos: amount,
         method,
         referenceNo,
         receiptNo,
         notes,
-      });
+      };
+      const result = correcting
+        ? await correctTopUpAction(correcting.entryId, reason, values)
+        : await recordTopUpAction(values);
       if (!result.ok) return setError(result.error);
       onOpenChange(false);
-      toast.success(`Advance recorded for ${patient.name}`, {
-        description: `${formatPeso(amount)} added to credit, receipt ${result.data.receiptNo}`,
-      });
+      toast.success(
+        correcting
+          ? `Advance corrected for ${patient.name}`
+          : `Advance recorded for ${patient.name}`,
+        {
+          description: correcting
+            ? `The old entry is voided. Balance now ${formatPeso(result.data.balanceCentavos)}.`
+            : `${formatPeso(amount)} added to credit, receipt ${result.data.receiptNo}`,
+        },
+      );
     });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Record advance payment</DialogTitle>
+          <DialogTitle>
+            {correcting ? "Edit advance payment" : "Record advance payment"}
+          </DialogTitle>
           <DialogDescription>
             {formatManila(new Date(`${today}T04:00:00Z`), "weekdayDay")}. Advance payments are
             non-refundable credit.
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="grid gap-4">
+          {correcting && (
+            <div className="grid gap-2 rounded-lg border border-warning/40 bg-warning-soft/50 p-3 text-sm">
+              <p>
+                The {formatPeso(correcting.amountCentavos)} entry (receipt {correcting.receiptNo})
+                stays on record as voided, and the corrected one replaces it.
+              </p>
+              <div className="grid gap-1">
+                <Label htmlFor="tu-reason" className="text-xs">
+                  Reason for the change
+                </Label>
+                <Input
+                  id="tu-reason"
+                  maxLength={200}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. Typed ₱3,500, received ₱3,000"
+                />
+              </div>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor="tu-patient">Patient</Label>
             {locked ? (
@@ -235,7 +295,11 @@ export function AdvancePaymentDialog({ open, onOpenChange, patient: locked, toda
             Cancel
           </Button>
           <Button disabled={!canConfirm} onClick={confirm}>
-            {amount ? `Record ${formatPeso(amount)}` : "Record advance"}
+            {correcting
+              ? "Save corrected advance"
+              : amount
+                ? `Record ${formatPeso(amount)}`
+                : "Record advance"}
           </Button>
         </DialogFooter>
       </DialogContent>

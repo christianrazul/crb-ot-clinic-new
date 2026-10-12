@@ -4,7 +4,12 @@ import { Check, Wallet } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { collectPaymentAction, getPaymentContextAction } from "@/app/(app)/billing/actions";
+import {
+  collectPaymentAction,
+  correctPaymentAction,
+  getPaymentContextAction,
+  getPaymentCorrectionAction,
+} from "@/app/(app)/billing/actions";
 import { SummaryRow } from "@/components/app/detail-bits";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { Button } from "@/components/ui/button";
@@ -33,13 +38,24 @@ import type { PaymentContext } from "@/server/services/payments";
 import { MethodPicker } from "./method-picker";
 import { useServerData } from "./use-server-data";
 
-type Props = { open: boolean; onOpenChange: (open: boolean) => void; appointmentId: string };
+type Props = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+} & (
+  | { appointmentId: string; correctPaymentId?: never }
+  /** Edit a payment: void it and record the corrected one. */
+  | { correctPaymentId: string; appointmentId?: never }
+);
 
 const digitsOnly = (value: string) => value.replace(/\D/g, "");
 const toCentavos = (digits: string) => (digits ? pesosToCentavos(digits) : null);
 
-export function PaymentDialog({ open, onOpenChange, appointmentId }: Props) {
-  const loaded = useServerData(() => getPaymentContextAction(appointmentId));
+export function PaymentDialog({ open, onOpenChange, appointmentId, correctPaymentId }: Props) {
+  const loaded = useServerData(() =>
+    correctPaymentId
+      ? getPaymentCorrectionAction(correctPaymentId)
+      : getPaymentContextAction(appointmentId!),
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
@@ -57,7 +73,7 @@ export function PaymentDialog({ open, onOpenChange, appointmentId }: Props) {
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Collect payment</DialogTitle>
+              <DialogTitle>{correctPaymentId ? "Edit payment" : "Collect payment"}</DialogTitle>
               <DialogDescription>{loaded.error ?? "Loading the session…"}</DialogDescription>
             </DialogHeader>
             {!loaded.error && (
@@ -95,6 +111,8 @@ function PaymentForm({
   };
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
+  const correcting = context.correcting;
+  const [reason, setReason] = React.useState("");
   const quote = quotePayment({
     ...paymentInput,
     dueCentavos: context.feeCentavos,
@@ -107,14 +125,15 @@ function PaymentForm({
     startTransition(async () => {
       if (!quote.canConfirm) return;
       setError(null);
-      const result = await collectPaymentAction({
-        appointmentId: context.appointmentId,
-        ...paymentInput,
-      });
+      const result = correcting
+        ? await correctPaymentAction(correcting.paymentId, reason, paymentInput)
+        : await collectPaymentAction({ appointmentId: context.appointmentId, ...paymentInput });
       if (!result.ok) return setError(result.error);
       onOpenChange(false);
-      toast.success(`Payment recorded for ${name}`, {
-        description: `${formatPeso(context.feeCentavos)} by ${result.data.methodLabel.toLowerCase()}, receipt ${result.data.receiptNo}`,
+      toast.success(correcting ? `Payment corrected for ${name}` : `Payment recorded for ${name}`, {
+        description: correcting
+          ? `Receipt ${correcting.receiptNo} is voided; the new receipt is ${result.data.receiptNo}.`
+          : `${formatPeso(context.feeCentavos)} by ${result.data.methodLabel.toLowerCase()}, receipt ${result.data.receiptNo}`,
       });
       if (result.data.lowCredit) {
         toast.warning(`${name}'s credit is low`, {
@@ -134,13 +153,34 @@ function PaymentForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Collect payment</DialogTitle>
+        <DialogTitle>{correcting ? "Edit payment" : "Collect payment"}</DialogTitle>
         <DialogDescription>
           {formatManila(new Date(context.startsAt), "weekdayDay")} at{" "}
           {formatManila(new Date(context.startsAt), "time")}
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="grid gap-4">
+        {correcting && (
+          <div className="grid gap-2 rounded-lg border border-warning/40 bg-warning-soft/50 p-3 text-sm">
+            <p>
+              Replacing receipt <span className="font-medium">{correcting.receiptNo}</span> (
+              {correcting.methodLabel.toLowerCase()}). It stays on record as voided, and this
+              payment gets a new receipt number.
+            </p>
+            <div className="grid gap-1">
+              <Label htmlFor="correct-reason" className="text-xs">
+                Reason for the change
+              </Label>
+              <Input
+                id="correct-reason"
+                maxLength={200}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Paid by GCash, not cash"
+              />
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-3 rounded-lg border p-3">
           <PatientAvatar name={name} service={context.service} className="size-9" />
           <div className="grid min-w-0 flex-1 leading-tight">
@@ -326,8 +366,13 @@ function PaymentForm({
         <Button variant="outline" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
-        <Button disabled={!quote.canConfirm || pending} onClick={confirm}>
-          {cta}
+        <Button
+          disabled={
+            !quote.canConfirm || pending || (Boolean(correcting) && reason.trim().length < 3)
+          }
+          onClick={confirm}
+        >
+          {correcting ? "Save corrected payment" : cta}
         </Button>
       </DialogFooter>
     </>
