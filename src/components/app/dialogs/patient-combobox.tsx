@@ -36,6 +36,8 @@ type PatientComboboxProps = {
   onNew?: () => void;
   creditOf?: (patientId: string) => number;
   placeholder?: string;
+  /** Searching to book a session: therapists see every patient, not just their own. */
+  forBooking?: boolean;
 };
 
 /** Patient picker backed by server search. Only active patients are offered. */
@@ -49,9 +51,14 @@ export function PatientCombobox({
   onNew,
   creditOf,
   placeholder = "Search patients",
+  forBooking = false,
 }: PatientComboboxProps) {
   const [open, setOpen] = React.useState(false);
-  const { hits, loading } = usePatientSearch(query, { bookableOnly: true, enabled: open });
+  const { hits, loading } = usePatientSearch(query, {
+    bookableOnly: true,
+    forBooking,
+    enabled: open,
+  });
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

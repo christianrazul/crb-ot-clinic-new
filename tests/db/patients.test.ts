@@ -142,6 +142,21 @@ describe("patient CRUD", () => {
     expect(hits.map((h) => h.firstName)).toContain("Liam");
     expect(hits.map((h) => h.firstName)).not.toContain("Sofia");
   });
+
+  it("therapist booking search finds every active patient, guardians only for their own", async () => {
+    const hits = await searchPatients(testDb(), ACTORS.therapist, {
+      branchId: "br_bangkal",
+      query: "",
+      bookableOnly: true,
+      forBooking: true,
+      limit: 50,
+    });
+    const liam = hits.find((h) => h.firstName === "Liam");
+    const sofia = hits.find((h) => h.firstName === "Sofia");
+    expect(liam?.guardianName).toBeTruthy();
+    expect(sofia).toMatchObject({ guardianName: null, guardianRelationship: null });
+    expect(hits.every((h) => h.status === "active")).toBe(true);
+  });
 });
 
 describe("patients list page", () => {

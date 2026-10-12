@@ -81,8 +81,8 @@ export const SCREEN_TITLES: Record<ScreenKey, string> = {
   settings: "Settings",
 };
 
-/** Screens where the header shows the "New session" button (never for therapists). */
-export const SCREENS_WITH_NEW_SESSION: ScreenKey[] = ["dashboard", "today", "schedule"];
+/** Screens where the header shows the "New session" button. */
+export const SCREENS_WITH_NEW_SESSION: ScreenKey[] = ["dashboard", "today", "my-day", "schedule"];
 
 export function navItemsFor(role: Role): NavItem[] {
   return NAV[role].flatMap((section) => section.items);

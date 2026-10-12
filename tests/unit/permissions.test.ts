@@ -45,7 +45,6 @@ describe("can", () => {
       "credit:read",
       "payment:collect",
       "appointment:status",
-      "appointment:book",
       "payroll:read",
     ] as const) {
       expect(can(ACTORS.therapist, action, { branchId: "br_bangkal" })).toBe(false);

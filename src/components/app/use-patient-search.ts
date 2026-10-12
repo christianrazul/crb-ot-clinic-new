@@ -17,11 +17,12 @@ export type PatientHit = {
 
 /**
  * Server-side patient search, 200ms after typing stops. `bookableOnly` drops
- * inactive patients, so they never appear when booking.
+ * inactive patients, so they never appear when booking. `forBooking` also lets
+ * a therapist find patients other than their own.
  */
 export function usePatientSearch(
   query: string,
-  options: { bookableOnly: boolean; enabled?: boolean },
+  options: { bookableOnly: boolean; forBooking?: boolean; enabled?: boolean },
 ) {
   const [answer, setAnswer] = React.useState<{ query: string | null; hits: PatientHit[] }>({
     query: null,
@@ -33,14 +34,18 @@ export function usePatientSearch(
     if (!enabled) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
-      const result = await searchPatientsAction({ query, bookableOnly: options.bookableOnly });
+      const result = await searchPatientsAction({
+        query,
+        bookableOnly: options.bookableOnly,
+        forBooking: options.forBooking,
+      });
       if (!cancelled) setAnswer({ query, hits: result.ok ? (result.data as PatientHit[]) : [] });
     }, 200);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, options.bookableOnly, enabled]);
+  }, [query, options.bookableOnly, options.forBooking, enabled]);
 
   // Still loading while the answer on screen is for an older query.
   return { hits: answer.hits, loading: answer.query !== query };

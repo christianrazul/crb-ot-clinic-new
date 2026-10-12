@@ -141,15 +141,34 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
   };
 }
 
-/** Typeahead for the booking dialog and the command palette. Active patients only when booking. */
+/**
+ * Typeahead for the booking dialog and the command palette. Active patients
+ * only when booking. Therapists search their own patients, except when booking
+ * (`forBooking`): then they get every active patient at the branch, so they can
+ * book anyone, but only see the guardian of their own.
+ */
 export async function searchPatients(
   db: DbExecutor,
   actor: Actor,
-  input: { branchId: string; query: string; bookableOnly: boolean; limit?: number },
+  input: {
+    branchId: string;
+    query: string;
+    bookableOnly: boolean;
+    forBooking?: boolean;
+    limit?: number;
+  },
 ) {
   assertCan(actor, "patient:read", { branchId: input.branchId });
+  if (input.forBooking) assertCan(actor, "appointment:book", { branchId: input.branchId });
   const term = input.query.trim();
   const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const own =
+    actor.role === "therapist"
+      ? or(
+          eq(patients.primaryStaffId, actor.staffId ?? "none"),
+          sql`exists (select 1 from ${patientBackupStaff} where ${patientBackupStaff.patientId} = ${patients.id} and ${patientBackupStaff.staffId} = ${actor.staffId ?? "none"})`,
+        )
+      : undefined;
   const rows = await db
     .select({
       id: patients.id,
@@ -159,6 +178,7 @@ export async function searchPatients(
       status: patients.status,
       guardianName: guardians.name,
       guardianRelationship: guardians.relationship,
+      own: own ? sql<boolean>`${own}` : sql<boolean>`true`,
     })
     .from(patients)
     .leftJoin(guardians, and(eq(guardians.patientId, patients.id), eq(guardians.isPrimary, true)))
@@ -166,24 +186,22 @@ export async function searchPatients(
       and(
         eq(patients.branchId, input.branchId),
         isNull(patients.deletedAt),
-        input.bookableOnly ? eq(patients.status, "active") : undefined,
-        actor.role === "therapist"
-          ? or(
-              eq(patients.primaryStaffId, actor.staffId ?? "none"),
-              sql`exists (select 1 from ${patientBackupStaff} where ${patientBackupStaff.patientId} = ${patients.id} and ${patientBackupStaff.staffId} = ${actor.staffId ?? "none"})`,
-            )
-          : undefined,
+        input.bookableOnly || input.forBooking ? eq(patients.status, "active") : undefined,
+        input.forBooking ? undefined : own,
         term
           ? or(
               ilike(sql`${patients.firstName} || ' ' || ${patients.lastName}`, like),
-              ilike(guardians.name, like),
+              // Guardian names match only where the actor may see them.
+              and(own, ilike(guardians.name, like)),
             )
           : undefined,
       ),
     )
     .orderBy(asc(patients.firstName), asc(patients.lastName))
     .limit(input.limit ?? 20);
-  return rows;
+  return rows.map(({ own: isOwn, ...row }) =>
+    isOwn ? row : { ...row, guardianName: null, guardianRelationship: null },
+  );
 }
 
 async function assertStaffAtBranch(db: DbExecutor, branchId: string, staffIds: string[]) {

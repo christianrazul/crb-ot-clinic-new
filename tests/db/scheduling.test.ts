@@ -9,6 +9,7 @@ import {
   bookAppointment,
   cancelSeriesFrom,
   getAppointmentDetail,
+  getBookingOptions,
   getDaySchedule,
   materializeSeries,
 } from "@/server/services/scheduling";
@@ -88,12 +89,48 @@ describe("booking", () => {
       );
     }));
 
-  it("therapists cannot book", () =>
+  it("therapists book themselves, with any patient at the branch", () =>
+    inRollback(async (tx) => {
+      // Sofia Reyes is Anna Garcia's patient, not Dela Rosa's.
+      const { appointmentIds } = await bookAppointment(
+        tx,
+        ACTORS.therapist,
+        book({ patientId: "pat_04", staffId: "stf_delarosa" }),
+      );
+      const [row] = await tx
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, appointmentIds[0]!));
+      expect(row).toMatchObject({
+        patientId: "pat_04",
+        staffId: "stf_delarosa",
+        createdByUserId: "usr_ther_delarosa",
+      });
+    }));
+
+  it("therapists cannot book someone else or reschedule", () =>
     inRollback(async (tx) => {
       await expect(bookAppointment(tx, ACTORS.therapist, book({}))).rejects.toBeInstanceOf(
         ForbiddenError,
       );
+      await expect(
+        bookAppointment(
+          tx,
+          ACTORS.therapist,
+          book({ staffId: "stf_delarosa", rescheduleFromId: "apt_20260822_11_delarosa" }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
     }));
+
+  it("a therapist's booking options offer only themselves and what they can run", async () => {
+    const options = await getBookingOptions(testDb(), ACTORS.therapist, "br_bangkal");
+    expect(options.staff.map((s) => s.id)).toEqual(["stf_delarosa"]);
+    expect(options.sessionTypes.map((t) => t.name)).toEqual([
+      "OT session",
+      "OT evaluation",
+      "Make up session",
+    ]);
+  });
 
   it("a recurring booking creates a series and 8 weekly sessions", () =>
     inRollback(async (tx) => {
@@ -220,7 +257,7 @@ describe("reading the schedule", () => {
     });
     expect(day.columns.map((c) => c.id)).toEqual(["stf_delarosa"]);
     expect(day.appointments.every((a) => a.staffId === "stf_delarosa")).toBe(true);
-    expect(day.canBook).toBe(false);
+    expect(day.canBook).toBe(true);
     const detail = await getAppointmentDetail(
       testDb(),
       ACTORS.therapist,

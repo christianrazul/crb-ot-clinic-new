@@ -51,7 +51,7 @@ export function CommandMenu() {
   const { resolvedTheme, setTheme } = useTheme();
   const router = useRouter();
   const isDark = resolvedTheme === "dark";
-  const canBook = viewer.role !== "therapist";
+  const canCollect = viewer.role !== "therapist";
   // Patients come from the server, filtered by the same rules as the patients page.
   const { hits: patients } = usePatientSearch(query, { bookableOnly: false, enabled: commandOpen });
 
@@ -111,15 +111,13 @@ export function CommandMenu() {
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Actions">
-          {canBook && (
-            <CommandItem
-              value="action new session book"
-              onSelect={() => run(() => openDialog({ kind: "booking" }))}
-            >
-              <Plus className="text-muted-foreground" /> New session
-            </CommandItem>
-          )}
-          {canBook && (
+          <CommandItem
+            value="action new session book"
+            onSelect={() => run(() => openDialog({ kind: "booking" }))}
+          >
+            <Plus className="text-muted-foreground" /> New session
+          </CommandItem>
+          {canCollect && (
             <CommandItem
               value="action record advance payment credit"
               onSelect={() => run(() => openDialog({ kind: "advance" }))}

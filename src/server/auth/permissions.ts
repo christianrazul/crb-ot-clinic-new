@@ -33,7 +33,8 @@ export type Action =
 const GRANTS: Record<Action, Role[]> = {
   "dashboard:read": ["superadmin"],
   "schedule:read": ["superadmin", "secretary", "therapist"],
-  "appointment:book": ["superadmin", "secretary"],
+  /** Therapists book sessions too, but only with themselves as the therapist. */
+  "appointment:book": ["superadmin", "secretary", "therapist"],
   "appointment:status": ["superadmin", "secretary"],
   "patient:read": ["superadmin", "secretary", "therapist"],
   /** Set patients inactive, remove them, book them, record their money. */

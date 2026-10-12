@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { Role } from "@/lib/roles";
 import type { NotificationItem } from "@/server/services/notifications";
 
 import { SCREEN_TITLES, SCREENS_WITH_NEW_SESSION, screenFromPathname } from "./nav";
@@ -19,19 +18,16 @@ import { useModKeyLabel } from "./use-mod-key";
 
 export function AppHeader({
   branchName,
-  role,
   notifications,
 }: {
   branchName: string;
-  role: Role;
   notifications: NotificationItem[];
 }) {
   const { toggleSidebar, setCommandOpen } = useShell();
   const { openDialog } = useDialogs();
   const modKey = useModKeyLabel();
   const screen = screenFromPathname(usePathname());
-  const showNewSession =
-    role !== "therapist" && screen !== null && SCREENS_WITH_NEW_SESSION.includes(screen);
+  const showNewSession = screen !== null && SCREENS_WITH_NEW_SESSION.includes(screen);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-4">

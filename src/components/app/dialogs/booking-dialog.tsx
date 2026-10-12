@@ -116,7 +116,8 @@ function BookingForm({
   const [form, setForm] = React.useState<BookingDraft>({
     sessionTypeId: rescheduling ? (makeUp?.id ?? "") : (options.sessionTypes[0]?.id ?? ""),
     patientId: original?.patient.id ?? null,
-    staffId: original?.staffId ?? null,
+    // A therapist is only offered themselves, so they start picked.
+    staffId: original?.staffId ?? (options.staff.length === 1 ? options.staff[0]!.id : null),
     // As in the mockup: the next open day after today, unless the caller picked one.
     date: nextOpenDay(defaultDate, branch.openDays),
     hour: branch.opensAtHour,
@@ -246,6 +247,7 @@ function BookingForm({
           ) : (
             <PatientCombobox
               id="book-patient"
+              forBooking
               value={form.patientId}
               selected={selected}
               query={query}

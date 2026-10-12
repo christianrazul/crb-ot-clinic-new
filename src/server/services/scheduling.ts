@@ -8,7 +8,7 @@ import { fromManilaLocal, manilaHour, manilaWeekday, toManilaIsoDate } from "@/l
 import type { ServiceKey } from "@/lib/services";
 import { bookingInput } from "@/lib/validation/booking";
 import type { Actor } from "@/server/auth/actor";
-import { assertCan, can } from "@/server/auth/permissions";
+import { assertCan, can, ForbiddenError } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
@@ -192,7 +192,10 @@ export async function getWeekSchedule(
   };
 }
 
-/** What the booking dialog offers: active session types, eligible staff and the branch's hours. */
+/**
+ * What the booking dialog offers: active session types, eligible staff and the
+ * branch's hours. A therapist is only offered themselves and what they can run.
+ */
 export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: string) {
   assertCan(actor, "appointment:book", { branchId });
   const branch = await branchOrThrow(db, branchId);
@@ -208,7 +211,14 @@ export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: 
       })
       .from(staff)
       .innerJoin(rateClasses, eq(staff.rateClassId, rateClasses.id))
-      .where(and(eq(staff.branchId, branchId), eq(staff.active, true), isNull(staff.deletedAt)))
+      .where(
+        and(
+          eq(staff.branchId, branchId),
+          eq(staff.active, true),
+          isNull(staff.deletedAt),
+          actor.role === "therapist" ? eq(staff.id, actor.staffId ?? "none") : undefined,
+        ),
+      )
       .orderBy(asc(staff.sortOrder)),
   ]);
   return {
@@ -219,13 +229,18 @@ export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: 
       opensAtHour: branch.opensAtHour,
       closesAtHour: branch.closesAtHour,
     },
-    sessionTypes: types.map((t) => ({
-      id: t.id,
-      name: t.name,
-      service: t.service,
-      rateCentavos: t.rateCentavos,
-      allowedRateClassIds: t.allowedRateClassIds,
-    })),
+    // A therapist only sees the session types their role can run.
+    sessionTypes: types
+      .filter(
+        (t) => actor.role !== "therapist" || eligibleStaff(staffRows, t.allowedRateClassIds).length,
+      )
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        service: t.service,
+        rateCentavos: t.rateCentavos,
+        allowedRateClassIds: t.allowedRateClassIds,
+      })),
     staff: staffRows,
   };
 }
@@ -250,6 +265,13 @@ export async function bookAppointment(
 ) {
   assertCan(actor, "appointment:book", { branchId: input.branchId });
   const v = bookingInput.parse(input.values);
+  // Therapists book only themselves, with any patient at the branch. Moving a
+  // session stays with the desk, as does every other status change.
+  if (actor.role === "therapist") {
+    if (v.staffId !== actor.staffId)
+      throw new ForbiddenError("You can only book sessions for yourself.");
+    if (v.rescheduleFromId) throw new ForbiddenError();
+  }
   const branch = await branchOrThrow(db, input.branchId);
   // Only this branch's session types can be booked here.
   const [type] = await listSessionTypes(db, { branchId: input.branchId }).then((all) =>

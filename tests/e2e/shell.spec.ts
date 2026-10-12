@@ -39,10 +39,15 @@ test.describe("therapist routing", () => {
     await expect(page).toHaveURL(/\/my-day$/);
   });
 
-  test("therapists never get New session", async ({ page }) => {
-    await page.goto("/schedule");
-    await expect(page.getByRole("heading", { level: 1 })).toBeAttached();
-    await expect(page.getByRole("button", { name: "New session" })).toHaveCount(0);
+  test("therapists book only themselves, with any patient", async ({ page }) => {
+    await page.goto("/my-day");
+    await page.getByRole("button", { name: "New session" }).click();
+    const dialog = page.getByRole("dialog", { name: "New session" });
+    await expect(dialog.getByRole("combobox", { name: "Therapist" })).toHaveText(/Dela Rosa/);
+    await dialog.getByRole("combobox", { name: "Patient" }).click();
+    await page.getByPlaceholder("Type a name").fill("Sofia");
+    // Anna Garcia's patient, not Dela Rosa's.
+    await expect(page.getByRole("option", { name: /Sofia Reyes/ })).toBeVisible();
   });
 });
 

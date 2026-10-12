@@ -706,3 +706,11 @@ Payments and credit entries stay append-only (D-047): nothing is edited in place
 Every void needs a reason and records who and when. Voided entries stay visible, struck through, on the patient's ledger. Balances, billing, owed amounts, notifications, dashboard income and exports count only live rows.
 
 Postgres enforces it: the append-only triggers now use `void_once_guard()`, which allows exactly one update per row, from not voided to voided, with a user and a non-blank reason, and no other column changed. Deletes are still refused. "One payment per session" is now a unique index over live payments only.
+
+### D-122: Therapists book their own sessions
+
+Therapists can book sessions with themselves from My day, the schedule and the command palette. The patient picker shows every active patient at the branch, not only their own, so they can take on someone else's patient for a session. The booking dialog offers only the therapist themselves and the session types their role can run; the server refuses a booking for anyone else whatever the browser sends. Adding a new patient while booking assigns that patient to them, as in D-120.
+
+What stays the same: rescheduling, cancelling and status changes remain with the owner and the desk. In the booking search, a therapist sees the guardian only for their own patients, and guardian names only match those. Booking a session doesn't make the patient theirs: the session appears on their schedule and they can write its note, but the patient record still looks missing unless they're the primary or a backup therapist.
+
+Permissions: `appointment:book` now includes therapists (themselves only, no rescheduling).

@@ -52,7 +52,13 @@ export async function deletePatientAction(patientId: unknown) {
 
 /** Typeahead for the command palette and the booking dialog. */
 export async function searchPatientsAction(input: unknown) {
-  const parsed = z.object({ query: z.string().max(80), bookableOnly: z.boolean() }).parse(input);
+  const parsed = z
+    .object({
+      query: z.string().max(80),
+      bookableOnly: z.boolean(),
+      forBooking: z.boolean().optional(),
+    })
+    .parse(input);
   const branchId = await currentBranchId();
   return runAction(({ db, actor }) => searchPatients(db, actor, { branchId, ...parsed }), {
     transaction: false,
