@@ -63,6 +63,18 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
   const [pending, startTransition] = React.useTransition();
   const [editing, setEditing] = React.useState<StaffMember | null>(null);
 
+  // Role A→Z, then name A→Z; inactive staff always sit below everyone active.
+  const staff = React.useMemo(
+    () =>
+      [...data.staff].sort(
+        (a, b) =>
+          Number(!a.active) - Number(!b.active) ||
+          a.rateClass.shortName.localeCompare(b.rateClass.shortName) ||
+          a.displayName.localeCompare(b.displayName),
+      ),
+    [data.staff],
+  );
+
   const toggleActive = (member: StaffMember) =>
     startTransition(async () => {
       const result = await setStaffActiveAction(member.id, !member.active);
@@ -178,7 +190,7 @@ export function StaffSection({ data }: { data: SettingsPageData }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.staff.map((member) => {
+            {staff.map((member) => {
               const low =
                 member.utilizationPct !== null && member.utilizationPct < LOW_UTILIZATION_PCT;
               return (

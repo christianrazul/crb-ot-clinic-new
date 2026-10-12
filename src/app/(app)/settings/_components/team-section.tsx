@@ -94,8 +94,29 @@ function inviteToast(name: string, email: string, invite: InviteResult) {
   }
 }
 
+/** Clinic owner, then front desk, then therapists. */
+const ACCESS_ORDER: Record<Role, number> = { superadmin: 0, secretary: 1, therapist: 2 };
+const STATUS_ORDER: Record<TeamStatus, number> = {
+  active: 0,
+  invited: 1,
+  locked: 2,
+  turned_off: 3,
+};
+
 export function TeamSection({ data }: { data: SettingsPageData }) {
-  const { accounts, staffWithoutLogin } = data.team;
+  const { staffWithoutLogin } = data.team;
+  // Turned-off accounts always last; otherwise by access, then status, then name.
+  const accounts = React.useMemo(
+    () =>
+      [...data.team.accounts].sort(
+        (a, b) =>
+          Number(a.status === "turned_off") - Number(b.status === "turned_off") ||
+          ACCESS_ORDER[a.role as Role] - ACCESS_ORDER[b.role as Role] ||
+          STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+          a.name.localeCompare(b.name),
+      ),
+    [data.team.accounts],
+  );
   const [adding, setAdding] = React.useState(false);
   const [editing, setEditing] = React.useState<Account | null>(null);
   const [pending, startTransition] = React.useTransition();
