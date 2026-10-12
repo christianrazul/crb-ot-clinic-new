@@ -111,7 +111,8 @@ export function AdjustCreditDialog({
           </Button>
           <Button
             onClick={save}
-            disabled={pending || amount <= 0 || after < 0 || reason.trim().length < 3}
+            loading={pending}
+            disabled={amount <= 0 || after < 0 || reason.trim().length < 3}
           >
             {direction === "add" ? "Add credit" : "Remove credit"}
           </Button>

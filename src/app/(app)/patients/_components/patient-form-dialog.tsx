@@ -137,8 +137,12 @@ export function PatientFormDialog({
           </DialogHeader>
           <DialogBody className="grid gap-4">
             <div className="grid grid-cols-2 gap-3">
-              {field("firstName", "First name", { autoFocus: true, autoComplete: "off" })}
-              {field("lastName", "Last name", { autoComplete: "off" })}
+              {field("firstName", "First name", {
+                autoFocus: true,
+                autoComplete: "off",
+                placeholder: "Sheldon",
+              })}
+              {field("lastName", "Last name", { autoComplete: "off", placeholder: "Cooper" })}
             </div>
             <div className="grid grid-cols-2 gap-3">
               {field("dateOfBirth", "Date of birth", { type: "date" })}
@@ -162,7 +166,9 @@ export function PatientFormDialog({
                 />
               </div>
             </div>
-            {field("diagnosis", "Diagnosis")}
+            {field("diagnosis", "Diagnosis", {
+              placeholder: "e.g. Sensory processing disorder with fine motor delays",
+            })}
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
                 <Label htmlFor="pf-service">Service</Label>
@@ -264,17 +270,25 @@ export function PatientFormDialog({
             )}
             <div className="grid gap-1.5">
               <Label htmlFor="pf-goals">Goals and notes</Label>
-              <Textarea id="pf-goals" rows={3} {...form.register("goalsNotes")} />
+              <Textarea
+                id="pf-goals"
+                rows={3}
+                placeholder="e.g. Tolerate unexpected changes to routine (including a new spot on the couch)"
+                {...form.register("goalsNotes")}
+              />
             </div>
             <Separator />
             <div className="text-sm font-semibold">Guardian</div>
             <div className="grid grid-cols-2 gap-3">
-              {field("guardianName", "Name", { autoComplete: "off" })}
+              {field("guardianName", "Name", { autoComplete: "off", placeholder: "Mary Cooper" })}
               {field("guardianRelationship", "Relationship", { placeholder: "e.g. Mother" })}
             </div>
             <div className="grid grid-cols-2 gap-3">
               {field("guardianPhone", "Phone", { inputMode: "tel", placeholder: "0917 555 0000" })}
-              {field("guardianEmail", "Email", { type: "email" })}
+              {field("guardianEmail", "Email", {
+                type: "email",
+                placeholder: "mary.cooper@example.com",
+              })}
             </div>
             {serverError && (
               <p
@@ -289,7 +303,7 @@ export function PatientFormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={form.formState.isSubmitting}>
+            <Button type="submit" loading={form.formState.isSubmitting}>
               {existing ? "Save patient" : "Add patient"}
             </Button>
           </DialogFooter>

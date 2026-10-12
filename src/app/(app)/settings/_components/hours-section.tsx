@@ -62,7 +62,7 @@ export function HoursSection({ data }: { data: SettingsPageData }) {
         title="Operating hours"
         description={`When sessions can be booked at ${branch.name}. Sessions start on the hour.`}
       >
-        <Button size="sm" onClick={save} disabled={invalid || !days.length || pending}>
+        <Button size="sm" onClick={save} loading={pending} disabled={invalid || !days.length}>
           Save changes
         </Button>
       </SectionHead>

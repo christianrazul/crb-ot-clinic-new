@@ -442,15 +442,21 @@ function AccountDialog({
           </Button>
           <Button
             onClick={submit}
+            loading={pending}
             disabled={
-              pending ||
               !branchIds.length ||
               !name.trim() ||
               !email.trim() ||
               (!existing && access === "staff:")
             }
           >
-            {existing ? "Save changes" : "Send invite"}
+            {pending
+              ? existing
+                ? "Saving…"
+                : "Sending invite…"
+              : existing
+                ? "Save changes"
+                : "Send invite"}
           </Button>
         </DialogFooter>
       </DialogContent>

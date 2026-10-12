@@ -364,7 +364,7 @@ function EditStaffDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={pending || name.trim().length < 2}>
+          <Button onClick={save} loading={pending} disabled={name.trim().length < 2}>
             Save changes
           </Button>
         </DialogFooter>

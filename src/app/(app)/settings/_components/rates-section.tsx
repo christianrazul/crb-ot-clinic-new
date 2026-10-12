@@ -53,7 +53,7 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
         title="Rates and splits"
         description={`The share of each session's fee a therapist earns at ${data.branch.name}. Session fees are set under Session types.`}
       >
-        <Button size="sm" onClick={save} disabled={pending}>
+        <Button size="sm" onClick={save} loading={pending}>
           Save changes
         </Button>
       </SectionHead>

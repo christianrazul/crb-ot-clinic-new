@@ -140,7 +140,7 @@ export function ExpenseDialog({ branchName, today }: { branchName: string; today
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button disabled={!category || amountCentavos <= 0 || pending} onClick={save}>
+          <Button loading={pending} disabled={!category || amountCentavos <= 0} onClick={save}>
             Record {amountCentavos > 0 ? formatPeso(amountCentavos) : "expense"}
           </Button>
         </DialogFooter>

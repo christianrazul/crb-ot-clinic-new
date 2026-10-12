@@ -1,6 +1,16 @@
 "use client";
 
-import { Check, ChevronsUpDown, LogOut, Moon, PanelLeft, Plus, Sun, UserRound } from "lucide-react";
+import {
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  LogOut,
+  Moon,
+  PanelLeft,
+  Plus,
+  Sun,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -116,12 +126,16 @@ function BranchSwitcher({
   collapsed: boolean;
   mobile: boolean;
 }) {
-  const [, startTransition] = React.useTransition();
+  const [pending, startTransition] = React.useTransition();
+  const [open, setOpen] = React.useState(false);
+  const [switchingTo, setSwitchingTo] = React.useState<string | null>(null);
+  const target = branches.find((b) => b.id === switchingTo);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={(next) => (pending ? undefined : setOpen(next))}>
       <DropdownMenuTrigger asChild>
         <button
+          aria-busy={pending}
           aria-label={collapsed ? `Switch branch, current: ${branch.name}` : undefined}
           className={cn(
             "flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left ring-sidebar-ring transition-colors outline-none hover:bg-sidebar-accent focus-visible:ring-2 data-[state=open]:bg-sidebar-accent",
@@ -134,10 +148,16 @@ function BranchSwitcher({
               <span className="grid min-w-0 flex-1 leading-tight">
                 <span className="truncate text-sm font-semibold">CRB OT Clinic</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {branchShortName(branch)} branch
+                  {pending && target
+                    ? `Switching to ${branchShortName(target)}…`
+                    : `${branchShortName(branch)} branch`}
                 </span>
               </span>
-              <ChevronsUpDown className="size-4 text-muted-foreground" />
+              {pending ? (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              ) : (
+                <ChevronsUpDown className="size-4 text-muted-foreground" />
+              )}
             </>
           )}
         </button>
@@ -153,7 +173,16 @@ function BranchSwitcher({
           <DropdownMenuItem
             key={option.id}
             className="gap-2.5 py-2"
-            onSelect={() => startTransition(() => selectBranch(option.id))}
+            disabled={pending}
+            onSelect={(event) => {
+              if (option.id === branch.id) return;
+              event.preventDefault();
+              setSwitchingTo(option.id);
+              startTransition(async () => {
+                await selectBranch(option.id);
+                setOpen(false);
+              });
+            }}
           >
             <span className="flex size-7 items-center justify-center rounded-md border bg-background text-[11px] font-semibold text-foreground">
               {option.code}
@@ -162,8 +191,12 @@ function BranchSwitcher({
               <span className="text-sm font-medium text-foreground">{option.name}</span>
               <span className="text-xs text-muted-foreground">{branchSubtitle(option)}</span>
             </span>
-            {option.id === branch.id && (
-              <Check className="text-primary!" aria-label="Current branch" />
+            {pending && option.id === switchingTo ? (
+              <Loader2 className="animate-spin" aria-label="Switching" />
+            ) : (
+              option.id === branch.id && (
+                <Check className="text-primary!" aria-label="Current branch" />
+              )
             )}
           </DropdownMenuItem>
         ))}
