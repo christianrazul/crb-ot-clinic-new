@@ -35,7 +35,7 @@ describe("team accounts", () => {
       expect(rita.branches.map((b) => b.id)).toEqual(["br_bangkal"]);
       expect(team.accounts.find((a) => a.id === "usr_owner")).toMatchObject({ isYou: true });
       // Staff who can still be given a login.
-      expect(team.staffWithoutLogin.map((s) => s.id)).toContain("stf_ramos");
+      expect(team.staffWithoutLogin.map((s) => s.id)).toContain("stf_tan");
       expect(team.staffWithoutLogin.map((s) => s.id)).not.toContain("stf_delarosa");
 
       await expect(listTeam(tx, ACTORS.desk)).rejects.toBeInstanceOf(ForbiddenError);
@@ -55,17 +55,17 @@ describe("team accounts", () => {
         }),
       ).rejects.toThrow(/already has a login/);
       await expect(
-        createAccount(tx, ACTORS.owner, { ...secretary, role: "secretary", staffId: "stf_ramos" }),
+        createAccount(tx, ACTORS.owner, { ...secretary, role: "secretary", staffId: "stf_tan" }),
       ).rejects.toThrow(/therapist accounts/);
 
       const { userId } = await createAccount(tx, ACTORS.owner, {
-        name: "Kevin Ramos",
-        email: "kevin@example.test",
+        name: "Marco Tan",
+        email: "marco@example.test",
         role: "therapist",
         branchIds: ["br_bangkal"],
-        staffId: "stf_ramos",
+        staffId: "stf_tan",
       });
-      const [linked] = await tx.select().from(staff).where(eq(staff.id, "stf_ramos"));
+      const [linked] = await tx.select().from(staff).where(eq(staff.id, "stf_tan"));
       expect(linked!.userId).toBe(userId);
     }));
 

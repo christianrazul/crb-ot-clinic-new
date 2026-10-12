@@ -19,7 +19,7 @@ describe("seed", () => {
     // Five per branch: Bangkal and Panabo each keep their own list.
     expect(await total(t.sessionTypes)).toBe(10);
     expect(await total(t.branchRates)).toBe(8);
-    expect(await total(t.users)).toBe(4);
+    expect(await total(t.users)).toBe(3);
   });
 
   it("has fourteen sessions on the demo Saturday", async () => {
