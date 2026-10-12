@@ -43,11 +43,11 @@ describe("editing staff", () => {
       });
 
       await expect(
-        updateStaff(tx, ACTORS.desk, { id: "stf_tan", displayName: "X Y", rateClassId: "rc_ot" }),
+        updateStaff(tx, ACTORS.desk, { id: "stf_ramos", displayName: "X Y", rateClassId: "rc_ot" }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
         updateStaff(tx, ACTORS.owner, {
-          id: "stf_tan",
+          id: "stf_ramos",
           displayName: "Marco Tan",
           rateClassId: "nope",
         }),
@@ -72,7 +72,7 @@ describe("editing staff", () => {
       [login] = await tx.select().from(users).where(eq(users.id, "usr_ther_delarosa"));
       expect(login!.active).toBe(true);
       // Staff with no login: only the staff record changes.
-      expect(await setStaffActive(tx, ACTORS.owner, { id: "stf_tan", active: false })).toEqual({
+      expect(await setStaffActive(tx, ACTORS.owner, { id: "stf_ramos", active: false })).toEqual({
         loginChanged: false,
       });
     }));

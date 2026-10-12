@@ -34,7 +34,7 @@ export const STAFF: StaffFixture[] = [
     shortName: "M. Tan, OTRP",
     surname: "Tan",
     rateClassId: "rc_ot",
-    userId: null,
+    userId: "usr_ther_tan",
     active: true,
     monthSessions: 98,
     monthPatients: 12,

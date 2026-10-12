@@ -10,6 +10,14 @@ export const SEED_USERS = [
   { ...USERS.superadmin, email: "camelia@crbclinic.test", branchIds: ["br_bangkal", "br_panabo"] },
   { ...USERS.secretary, email: "jo@crbclinic.test", branchIds: ["br_bangkal"] },
   { ...USERS.therapist, email: "jolyn@crbclinic.test", branchIds: ["br_bangkal"] },
+  {
+    id: "usr_ther_tan",
+    name: "Marco Tan",
+    title: "Occupational Therapist",
+    role: "therapist" as const,
+    email: "marco@crbclinic.test",
+    branchIds: ["br_bangkal"],
+  },
 ];
 
 const USER_BY_NAME = Object.fromEntries(SEED_USERS.map((u) => [u.name, u.id]));
