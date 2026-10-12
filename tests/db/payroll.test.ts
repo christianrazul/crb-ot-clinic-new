@@ -1,7 +1,11 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+
+import { payrollLine } from "@/lib/payroll";
 
 import { ForbiddenError } from "@/server/auth/permissions";
 import { setAppointmentStatus } from "@/server/services/appointments";
+import { appointments } from "@/server/db/schema";
 import { getPayroll, payrollCsv } from "@/server/services/payroll";
 import { updateRateClasses } from "@/server/services/settings";
 
@@ -21,7 +25,7 @@ describe("payroll", () => {
       clinicShareCentavos: 2_143_000,
     });
     const delarosa = report.rows.find((r) => r.staffId === "stf_delarosa")!;
-    expect(delarosa).toMatchObject({ rateCentavos: 70_000, rateClassName: expect.any(String) });
+    expect(delarosa).toMatchObject({ sharePct: 70, rateClassName: expect.any(String) });
     expect(delarosa.line).toMatchObject({ sessions: 20, therapistShareCentavos: 980_000 });
   });
 
@@ -38,7 +42,7 @@ describe("payroll", () => {
     inRollback(async (tx) => {
       await updateRateClasses(tx, ACTORS.owner, {
         branchId: "br_bangkal",
-        rows: [{ id: "rc_ot", ratePesos: 900, therapistSharePct: 60 }],
+        rows: [{ id: "rc_ot", therapistSharePct: 60 }],
       });
       await setAppointmentStatus(tx, ACTORS.desk, {
         appointmentId: "apt_20260822_11_delarosa",
@@ -46,11 +50,38 @@ describe("payroll", () => {
       });
       const report = await getPayroll(tx, ACTORS.owner, august);
       const delarosa = report.rows.find((r) => r.staffId === "stf_delarosa")!;
-      expect(delarosa.rateCentavos).toBeNull();
+      expect(delarosa.sharePct).toBeNull();
       expect(delarosa.line).toMatchObject({
         sessions: 21,
-        grossCentavos: 1_490_000,
-        therapistShareCentavos: 980_000 + 54_000,
+        grossCentavos: 1_400_000 + 70_000,
+        therapistShareCentavos: 980_000 + 42_000,
+      });
+    }));
+
+  it("pays the therapist their share of the session's fee: 70% of a ₱1,400 evaluation is ₱980", () =>
+    inRollback(async (tx) => {
+      // An OT Evaluation priced at ₱1,400, run by an Occupational Therapist (70%).
+      await tx
+        .update(appointments)
+        .set({ feeCentavos: 140_000 })
+        .where(eq(appointments.id, "apt_20260822_11_delarosa"));
+      const attended = await setAppointmentStatus(tx, ACTORS.desk, {
+        appointmentId: "apt_20260822_11_delarosa",
+        status: "attended",
+      });
+      expect(attended).toMatchObject({ payrollRateCentavos: 140_000, payrollSharePct: 70 });
+      expect(payrollLine(1, 140_000, 70)).toMatchObject({
+        therapistShareCentavos: 98_000,
+        clinicShareCentavos: 42_000,
+      });
+
+      const day = await getPayroll(tx, ACTORS.owner, { ...august, period: "daily" });
+      const delarosa = day.rows.find((r) => r.staffId === "stf_delarosa")!;
+      // That day's earlier OT session (₱700) plus the evaluation.
+      expect(delarosa.line).toMatchObject({
+        grossCentavos: 70_000 + 140_000,
+        therapistShareCentavos: 49_000 + 98_000,
+        clinicShareCentavos: 21_000 + 42_000,
       });
     }));
 

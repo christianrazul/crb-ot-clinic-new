@@ -80,7 +80,10 @@ export const appointments = pgTable(
     isMakeUp: boolean().notNull().default(false),
     /** Session type rate when booked. Later rate changes never touch it. */
     feeCentavos: integer().notNull(),
-    /** Rate class rate and share when marked attended, for payroll. */
+    /**
+     * Payroll snapshot taken when marked attended: the session fee the share
+     * applies to, and the therapist role's share at this branch (D-119).
+     */
     payrollRateCentavos: integer(),
     payrollSharePct: smallint(),
     statusChangedByUserId: text().references(() => users.id),

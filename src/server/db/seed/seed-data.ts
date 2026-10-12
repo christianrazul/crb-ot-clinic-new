@@ -174,7 +174,6 @@ export function buildSeedRows() {
       state.rateClasses.map((r) => ({
         branchId,
         rateClassId: r.id,
-        rateCentavos: r.rateCentavos,
         therapistSharePct: r.therapistSharePct,
       })),
     ),
@@ -253,7 +252,8 @@ export function buildSeedRows() {
         rescheduledToId: a.rescheduledToId,
         isMakeUp: a.isMakeUp,
         feeCentavos: a.feeCentavos,
-        payrollRateCentavos: attended ? rateClass.rateCentavos : null,
+        // The therapist earns their share of the session's fee (D-119).
+        payrollRateCentavos: attended ? a.feeCentavos : null,
         payrollSharePct: attended ? rateClass.therapistSharePct : null,
         statusChangedByUserId: a.statusChangedBy ? (USER_BY_NAME[a.statusChangedBy] ?? null) : null,
         statusChangedAt: a.statusChangedAt ? new Date(a.statusChangedAt) : null,

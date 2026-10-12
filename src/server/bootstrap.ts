@@ -66,7 +66,6 @@ export async function bootstrapClinic(db: Database, input: BootstrapInput) {
       RATE_CLASSES.map((r) => ({
         branchId: branch!.id,
         rateClassId: r.id,
-        rateCentavos: r.rateCentavos,
         therapistSharePct: r.therapistSharePct,
       })),
     );

@@ -7,7 +7,7 @@ export const rateClassesInput = z
   .array(
     z.object({
       id: z.string().min(1),
-      ratePesos: pesos,
+      /** The share of each session's fee the therapist earns. */
       therapistSharePct: z.number().int().min(0, "0 to 100.").max(100, "0 to 100."),
     }),
   )

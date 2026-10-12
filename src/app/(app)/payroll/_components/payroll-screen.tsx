@@ -127,8 +127,8 @@ export function PayrollScreen({ data }: { data: PayrollPageData }) {
                 <TableHead>Therapist</TableHead>
                 <TableHead>Rate class</TableHead>
                 <TableHead className="text-right">Sessions</TableHead>
-                <TableHead className="text-right">Rate</TableHead>
-                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Share</TableHead>
+                <TableHead className="text-right">Fees billed</TableHead>
                 <TableHead className="text-right">Therapist share</TableHead>
                 <TableHead className="text-right">Clinic share</TableHead>
               </TableRow>
@@ -154,7 +154,7 @@ export function PayrollScreen({ data }: { data: PayrollPageData }) {
                   </TableCell>
                   <TableCell className="text-right">{row.line.sessions}</TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {row.rateCentavos === null ? "Varies" : formatPeso(row.rateCentavos)}
+                    {row.sharePct === null ? "Varies" : `${row.sharePct}%`}
                   </TableCell>
                   <TableCell className="text-right">{formatPeso(row.line.grossCentavos)}</TableCell>
                   <TableCell className="text-right font-medium">

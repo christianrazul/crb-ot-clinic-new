@@ -11,21 +11,21 @@ test.describe("branch-specific settings", () => {
   test("a rate saved at Panabo leaves Bangkal's unchanged", async ({ page }) => {
     await page.goto("/settings?tab=rates");
     await expect(page.getByText(/^For CRB Bangkal\./)).toBeVisible();
-    const speech = () => page.getByLabel("Speech Therapist rate per session");
-    await expect(speech()).toHaveValue("1000");
+    const speech = () => page.getByLabel("Speech Therapist therapist share");
+    await expect(speech()).toHaveValue("80");
 
     await switchBranch(page, /CRB Panabo/);
     await expect(page.getByText(/^For CRB Panabo\./)).toBeVisible();
-    await expect(page.getByText(/bills per session at CRB Panabo/)).toBeVisible();
-    await speech().fill("1100");
+    await expect(page.getByText(/a therapist earns at CRB Panabo/)).toBeVisible();
+    await speech().fill("85");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Rates saved")).toBeVisible();
     await page.reload();
-    await expect(speech()).toHaveValue("1100");
+    await expect(speech()).toHaveValue("85");
 
     await switchBranch(page, /CRB Bangkal/);
     await expect(page.getByText(/^For CRB Bangkal\./)).toBeVisible();
-    await expect(speech()).toHaveValue("1000");
+    await expect(speech()).toHaveValue("80");
   });
 
   test("a settings page left open on one branch refuses to save after switching in another tab", async ({
@@ -40,7 +40,7 @@ test.describe("branch-specific settings", () => {
     await switchBranch(other, /CRB Panabo/);
     await expect(other.getByRole("navigation", { name: "Breadcrumb" })).toContainText("CRB Panabo");
 
-    await page.getByLabel("Speech Therapist therapist share").fill("81");
+    await page.getByLabel("Occupational Therapist Aide therapist share").fill("55");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(
       page.getByText(/You've switched to CRB Panabo since this page loaded/),
@@ -48,7 +48,7 @@ test.describe("branch-specific settings", () => {
 
     await page.reload();
     await expect(page.getByText(/^For CRB Panabo\./)).toBeVisible();
-    await expect(page.getByLabel("Speech Therapist therapist share")).toHaveValue("80");
+    await expect(page.getByLabel("Occupational Therapist Aide therapist share")).toHaveValue("50");
   });
 
   test("clinic-wide tabs say so", async ({ page }) => {

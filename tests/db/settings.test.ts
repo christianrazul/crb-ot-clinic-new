@@ -38,7 +38,7 @@ describe("rates and splits", () => {
       const before = await payrollTotal(tx);
       await updateRateClasses(tx, ACTORS.owner, {
         branchId: "br_bangkal",
-        rows: [{ id: "rc_ot", ratePesos: 900, therapistSharePct: 60 }],
+        rows: [{ id: "rc_ot", therapistSharePct: 60 }],
       });
       expect(await payrollTotal(tx)).toBe(before);
 
@@ -47,15 +47,16 @@ describe("rates and splits", () => {
         appointmentId: "apt_20260822_11_delarosa",
         status: "attended",
       });
-      expect(after).toMatchObject({ payrollRateCentavos: 90_000, payrollSharePct: 60 });
+      // The session's own fee, at the new share.
+      expect(after).toMatchObject({ payrollRateCentavos: 70_000, payrollSharePct: 60 });
 
       const [entry] = await tx
         .select()
         .from(auditLog)
         .where(and(eq(auditLog.entity, "rate_class"), eq(auditLog.entityId, "rc_ot")));
       expect(entry).toMatchObject({
-        before: { rateCentavos: 70_000 },
-        after: { rateCentavos: 90_000 },
+        before: { therapistSharePct: 70 },
+        after: { therapistSharePct: 60 },
       });
     }));
 
@@ -64,7 +65,7 @@ describe("rates and splits", () => {
       await expect(
         updateRateClasses(tx, ACTORS.owner, {
           branchId: "br_bangkal",
-          rows: [{ id: "rc_ot", ratePesos: 700, therapistSharePct: 120 }],
+          rows: [{ id: "rc_ot", therapistSharePct: 120 }],
         }),
       ).rejects.toThrow(/0 to 100/);
     }));
@@ -74,7 +75,7 @@ describe("rates and splits", () => {
       await expect(
         updateRateClasses(tx, ACTORS.desk, {
           branchId: "br_bangkal",
-          rows: [{ id: "rc_ot", ratePesos: 1, therapistSharePct: 1 }],
+          rows: [{ id: "rc_ot", therapistSharePct: 1 }],
         }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(

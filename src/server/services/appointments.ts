@@ -20,8 +20,8 @@ export const statusChangeInput = z.object({
 
 /**
  * Check in, mark attended, no-show or cancel (one session). Owner and front
- * desk only. Marking attended snapshots the therapist's rate and share for
- * payroll, so later rate changes never rewrite history.
+ * desk only. Marking attended snapshots the session's fee and the
+ * therapist's share for payroll, so later changes never rewrite history.
  */
 export async function setAppointmentStatus(db: DbExecutor, actor: Actor, raw: unknown) {
   const input = statusChangeInput.parse(raw);
@@ -37,13 +37,14 @@ export async function setAppointmentStatus(db: DbExecutor, actor: Actor, raw: un
   let payrollRateCentavos = before.payrollRateCentavos;
   let payrollSharePct = before.payrollSharePct;
   if (input.status === "attended" && before.status !== "attended") {
-    // The therapist's role, priced at the branch where the session happened.
+    // The therapist earns their role's share (at the branch where the session
+    // happened) of this session's fee, e.g. 70% of a ₱1,400 evaluation.
     const [member] = await db
       .select({ rateClassId: staff.rateClassId })
       .from(staff)
       .where(eq(staff.id, before.staffId));
     const snapshot = member ? await rateAt(db, before.branchId, member.rateClassId) : null;
-    payrollRateCentavos = snapshot?.rate ?? null;
+    payrollRateCentavos = snapshot ? before.feeCentavos : null;
     payrollSharePct = snapshot?.share ?? null;
   } else if (input.status !== "attended") {
     payrollRateCentavos = null;

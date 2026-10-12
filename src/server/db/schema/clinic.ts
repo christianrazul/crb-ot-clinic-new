@@ -59,7 +59,7 @@ export const rateClasses = pgTable("rate_classes", {
   updatedAt: updatedAt(),
 });
 
-/** What each role bills per session at a branch, and the therapist's share of it. */
+/** The share of each session's fee a role's therapist earns at a branch. */
 export const branchRates = pgTable(
   "branch_rates",
   {
@@ -69,14 +69,12 @@ export const branchRates = pgTable(
     rateClassId: text()
       .notNull()
       .references(() => rateClasses.id),
-    rateCentavos: integer().notNull(),
     therapistSharePct: smallint().notNull(),
     updatedAt: updatedAt(),
   },
   (t) => [
     primaryKey({ columns: [t.branchId, t.rateClassId] }),
     index().on(t.rateClassId),
-    check("branch_rates_rate_positive", sql`${t.rateCentavos} >= 0`),
     check("branch_rates_share_pct", sql`${t.therapistSharePct} between 0 and 100`),
   ],
 );

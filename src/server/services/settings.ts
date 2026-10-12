@@ -143,9 +143,9 @@ async function sessionTypeIn(db: DbExecutor, actor: Actor, id: string, branchId:
 }
 
 /**
- * New rates and splits for one branch. They apply to sessions marked attended
- * from now on; attended sessions keep their payroll snapshot, so past payroll
- * never changes.
+ * New therapist shares for one branch. A therapist earns their role's share of
+ * each session's fee. Applies to sessions marked attended from now on;
+ * attended sessions keep their payroll snapshot, so past payroll never changes.
  */
 export async function updateRateClasses(
   db: DbExecutor,
@@ -158,32 +158,25 @@ export async function updateRateClasses(
   for (const row of rows) {
     const before = current.find((c) => c.id === row.id);
     if (!before) throw new NotFoundError("That role no longer exists. Reload the page.");
-    const rateCentavos = row.ratePesos * 100;
-    if (before.rateCentavos === rateCentavos && before.therapistSharePct === row.therapistSharePct)
-      continue;
+    if (before.therapistSharePct === row.therapistSharePct) continue;
     await db
       .insert(branchRates)
       .values({
         branchId: input.branchId,
         rateClassId: row.id,
-        rateCentavos,
         therapistSharePct: row.therapistSharePct,
       })
       .onConflictDoUpdate({
         target: [branchRates.branchId, branchRates.rateClassId],
-        set: { rateCentavos, therapistSharePct: row.therapistSharePct, updatedAt: new Date() },
+        set: { therapistSharePct: row.therapistSharePct, updatedAt: new Date() },
       });
     await writeAudit(db, {
       actorUserId: actor.userId,
       action: "rate_class.update",
       entity: "rate_class",
       entityId: row.id,
-      before: {
-        branchId: input.branchId,
-        rateCentavos: before.rateCentavos,
-        therapistSharePct: before.therapistSharePct,
-      },
-      after: { branchId: input.branchId, rateCentavos, therapistSharePct: row.therapistSharePct },
+      before: { branchId: input.branchId, therapistSharePct: before.therapistSharePct },
+      after: { branchId: input.branchId, therapistSharePct: row.therapistSharePct },
       ip: actor.ip,
     });
   }

@@ -28,12 +28,7 @@ import { digitsOnly } from "./add-form";
 export function RatesSection({ data }: { data: SettingsPageData }) {
   const [pending, startTransition] = React.useTransition();
   const [draft, setDraft] = React.useState(() =>
-    Object.fromEntries(
-      data.rateClasses.map((r) => [
-        r.id,
-        { pesos: String(r.rateCentavos / 100), share: String(r.therapistSharePct) },
-      ]),
-    ),
+    Object.fromEntries(data.rateClasses.map((r) => [r.id, { share: String(r.therapistSharePct) }])),
   );
 
   const save = () =>
@@ -42,13 +37,12 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
         data.branch.id,
         data.rateClasses.map((r) => ({
           id: r.id,
-          ratePesos: Number(draft[r.id]!.pesos || 0),
           therapistSharePct: Number(draft[r.id]!.share || 0),
         })),
       );
       if (result.ok)
         toast.success("Rates saved", {
-          description: "New rates apply to sessions marked attended from now on.",
+          description: "New shares apply to sessions marked attended from now on.",
         });
       else toast.error(result.error);
     });
@@ -57,7 +51,7 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Rates and splits"
-        description={`What each role bills per session at ${data.branch.name}, and how the fee is divided.`}
+        description={`The share of each session's fee a therapist earns at ${data.branch.name}. Session fees are set under Session types.`}
       >
         <Button size="sm" onClick={save} disabled={pending}>
           Save changes
@@ -68,16 +62,16 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
           <TableHeader>
             <TableRow>
               <TableHead>Role</TableHead>
-              <TableHead className="w-[150px]">Rate per session</TableHead>
-              <TableHead className="w-[120px]">Therapist</TableHead>
-              <TableHead className="w-[220px]">Split</TableHead>
+              <TableHead className="w-[120px]">Therapist share</TableHead>
+              <TableHead className="w-[280px]">For example</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {data.rateClasses.map((rateClass) => {
               const row = draft[rateClass.id]!;
               const share = Math.min(100, Number(row.share || 0));
-              const line = payrollLine(1, Number(row.pesos || 0) * 100, share);
+              const example = exampleSessionFor(rateClass, data.sessionTypes);
+              const line = example ? payrollLine(1, example.rateCentavos, share) : null;
               return (
                 <TableRow key={rateClass.id}>
                   <TableCell>
@@ -85,22 +79,6 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
                       <SvcDot service={rateClass.service} />
                       {rateClass.name}
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <InputGroup
-                      prefix="₱"
-                      aria-label={`${rateClass.name} rate per session`}
-                      value={row.pesos}
-                      inputMode="numeric"
-                      className="w-[120px]"
-                      inputClassName="h-8"
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          [rateClass.id]: { ...row, pesos: digitsOnly(e.target.value) },
-                        })
-                      }
-                    />
                   </TableCell>
                   <TableCell>
                     <InputGroup
@@ -128,10 +106,22 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
                         style={{ width: `${share}%` }}
                       />
                     </div>
-                    <div className="mt-1.5 flex justify-between text-xs text-muted-foreground tabular-nums">
-                      <span>Therapist {formatPeso(line.therapistShareCentavos)}</span>
-                      <span>Clinic {formatPeso(line.clinicShareCentavos)}</span>
-                    </div>
+                    {example && line ? (
+                      <div className="mt-1.5 grid gap-0.5 text-xs text-muted-foreground tabular-nums">
+                        <span className="truncate">
+                          {example.name}, {formatPeso(example.rateCentavos)}
+                        </span>
+                        <span className="flex justify-between">
+                          <span>Therapist {formatPeso(line.therapistShareCentavos)}</span>
+                          <span>Clinic {formatPeso(line.clinicShareCentavos)}</span>
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 flex justify-between text-xs text-muted-foreground tabular-nums">
+                        <span>Therapist {share}%</span>
+                        <span>Clinic {100 - share}%</span>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               );
@@ -146,6 +136,25 @@ export function RatesSection({ data }: { data: SettingsPageData }) {
       />
     </>
   );
+}
+
+/**
+ * A session this role can run at the branch, to show the split in pesos:
+ * the priciest matching type, so the example is the one people ask about.
+ */
+function exampleSessionFor(
+  rateClass: SettingsPageData["rateClasses"][number],
+  types: SettingsPageData["sessionTypes"],
+) {
+  const service = rateClass.service === "aide" ? "ot" : rateClass.service;
+  return types
+    .filter(
+      (t) =>
+        t.active &&
+        t.service === service &&
+        (t.allowedRateClassIds === null || t.allowedRateClassIds.includes(rateClass.id)),
+    )
+    .sort((a, b) => b.rateCentavos - a.rateCentavos)[0];
 }
 
 function LowCreditCard({

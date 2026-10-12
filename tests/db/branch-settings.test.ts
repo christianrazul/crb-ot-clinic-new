@@ -27,17 +27,11 @@ describe("branch-specific settings", () => {
     inRollback(async (tx) => {
       await updateRateClasses(tx, ACTORS.owner, {
         branchId: "br_panabo",
-        rows: [{ id: "rc_ot", ratePesos: 900, therapistSharePct: 60 }],
+        rows: [{ id: "rc_ot", therapistSharePct: 60 }],
       });
-      expect(await rateOf(tx, "br_panabo", "rc_ot")).toMatchObject({
-        rateCentavos: 90_000,
-        therapistSharePct: 60,
-      });
-      expect(await rateOf(tx, "br_bangkal", "rc_ot")).toMatchObject({
-        rateCentavos: 70_000,
-        therapistSharePct: 70,
-      });
-      // A Bangkal session marked attended still snapshots Bangkal's rate.
+      expect(await rateOf(tx, "br_panabo", "rc_ot")).toMatchObject({ therapistSharePct: 60 });
+      expect(await rateOf(tx, "br_bangkal", "rc_ot")).toMatchObject({ therapistSharePct: 70 });
+      // A Bangkal session marked attended still snapshots Bangkal's share.
       const attended = await setAppointmentStatus(tx, ACTORS.desk, {
         appointmentId: "apt_20260822_11_delarosa",
         status: "attended",
@@ -108,16 +102,13 @@ describe("branch-specific settings", () => {
     inRollback(async (tx) => {
       await updateRateClasses(tx, ACTORS.owner, {
         branchId: "br_bangkal",
-        rows: [{ id: "rc_speech", ratePesos: 1200, therapistSharePct: 75 }],
+        rows: [{ id: "rc_speech", therapistSharePct: 75 }],
       });
       const created = await createBranch(tx, ACTORS.owner, {
         name: "CRB Toril",
         location: "Davao",
       });
-      expect(await rateOf(tx, created.id, "rc_speech")).toMatchObject({
-        rateCentavos: 120_000,
-        therapistSharePct: 75,
-      });
+      expect(await rateOf(tx, created.id, "rc_speech")).toMatchObject({ therapistSharePct: 75 });
       const types = await listSessionTypes(tx, { branchId: created.id });
       expect(types.map((t) => t.name).sort()).toEqual(
         (await listSessionTypes(tx, { branchId: "br_bangkal" })).map((t) => t.name).sort(),
@@ -136,7 +127,7 @@ describe("branch-specific settings", () => {
       await expect(
         updateRateClasses(tx, bangkalOnly, {
           branchId: "br_panabo",
-          rows: [{ id: "rc_ot", ratePesos: 1, therapistSharePct: 1 }],
+          rows: [{ id: "rc_ot", therapistSharePct: 1 }],
         }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(

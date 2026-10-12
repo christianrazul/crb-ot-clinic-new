@@ -675,3 +675,14 @@ Migration 0003 keeps everything as it was: every branch gets the clinic-wide rat
 ### D-118: Saving settings checks the branch
 
 Settings for rates, session types, staff, hours and the low-credit reminder apply to the branch picked in the sidebar, and the settings header says which ("For CRB Bangkal…"); Branches, Team accounts and the audit log say they cover the whole clinic. Every branch-scoped save sends the branch its form was loaded for, and the server refuses it unless that is still the person's current branch ("You've switched to CRB Panabo since this page loaded…"). That stops a page left open on one branch from saving into another after a switch in a second tab. Each section also re-mounts when the branch changes, so a form never shows one branch's numbers while you're at another. The services still check the owner belongs to that branch.
+
+### D-119: Therapists earn a share of each session's fee
+
+Corrects D-037 and D-117. The clinic pays therapists a percentage of what the session costs, by session type: an Occupational Therapist at 70% who runs an OT Evaluation priced at ₱1,400 earns ₱980, and the clinic keeps ₱420; the same therapist earns ₱455 on a ₱650 regular session. Roles no longer have a peso rate of their own:
+
+- Rates and splits holds one number per role and branch, the therapist share (`branch_rates.therapist_share_pct`). Each row shows a worked example using the priciest session type that role can run at the branch.
+- Session fees are set only under Session types, per branch.
+- Marking a session attended snapshots that session's fee (`appointments.payroll_rate_centavos`, now meaning "the fee the share applies to") and the role's share at the branch. Payroll, the dashboard's therapist earnings and My day all split those snapshots, so gross is the fees actually billed.
+- Payroll's Rate column becomes Share (and "Varies" if the share changed mid-period); the CSV has "Share (%)".
+
+Migration 0004 drops the unused role rate and re-bases any session already marked attended on its own fee.

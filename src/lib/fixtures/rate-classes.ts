@@ -6,7 +6,7 @@ export type RateClassFixture = {
   /** Short label used in badges, e.g. "OT Aide". */
   shortName: string;
   service: Exclude<ServiceKey, "none">;
-  rateCentavos: number;
+  /** The share of each session's fee the therapist earns. */
   therapistSharePct: number;
 };
 
@@ -16,7 +16,6 @@ export const RATE_CLASSES: RateClassFixture[] = [
     name: "Occupational Therapist",
     shortName: "OT",
     service: "ot",
-    rateCentavos: 70_000,
     therapistSharePct: 70,
   },
   {
@@ -24,7 +23,6 @@ export const RATE_CLASSES: RateClassFixture[] = [
     name: "Occupational Therapist Aide",
     shortName: "OT Aide",
     service: "aide",
-    rateCentavos: 70_000,
     therapistSharePct: 50,
   },
   {
@@ -32,7 +30,6 @@ export const RATE_CLASSES: RateClassFixture[] = [
     name: "Speech Therapist",
     shortName: "Speech",
     service: "speech",
-    rateCentavos: 100_000,
     therapistSharePct: 80,
   },
   {
@@ -40,7 +37,6 @@ export const RATE_CLASSES: RateClassFixture[] = [
     name: "SPED Tutor",
     shortName: "SPED",
     service: "sped",
-    rateCentavos: 50_000,
     therapistSharePct: 80,
   },
 ];

@@ -17,15 +17,16 @@ export type PayrollRow = {
   name: string;
   rateClassName: string;
   service: ServiceKey;
-  /** The snapshot rate when every session in the period used the same one, else null. */
-  rateCentavos: number | null;
+  /** The therapist share when every session in the period used the same one, else null. */
+  sharePct: number | null;
   line: PayrollLine;
 };
 
 /**
  * Payroll for one branch and period, from attended sessions only. Each
- * session is split with the rate and share snapshotted when it was marked
- * attended (D-037), so later rate changes never rewrite past payroll.
+ * session's fee is split with the therapist share snapshotted when it was
+ * marked attended (D-037, D-119): a 70% therapist on a ₱1,400 evaluation earns
+ * ₱980 and the clinic keeps ₱420. Later changes never rewrite past payroll.
  */
 export async function getPayroll(
   db: DbExecutor,
@@ -69,18 +70,18 @@ export async function getPayroll(
           name: s.name,
           rateClassName: s.rateClassName,
           service: s.service,
-          rateCentavos: s.rate,
+          sharePct: s.share,
         },
         lines: [line],
       });
     } else {
-      if (entry.row.rateCentavos !== s.rate) entry.row.rateCentavos = null;
+      if (entry.row.sharePct !== s.share) entry.row.sharePct = null;
       entry.lines.push(line);
     }
   }
   const rows: PayrollRow[] = [...byStaff.values()].map(({ row, lines }) => {
     const total = sumPayroll(lines);
-    return { ...row, line: { ...total, rateCentavos: row.rateCentavos ?? 0 } };
+    return { ...row, line: { ...total, rateCentavos: 0 } };
   });
   return {
     period: input.period,
@@ -115,7 +116,7 @@ export function payrollCsv(report: PayrollReport, branchName: string) {
       "Staff",
       "Rate class",
       "Sessions",
-      "Rate (PHP)",
+      "Share (%)",
       "Gross (PHP)",
       "Therapist share (PHP)",
       "Clinic share (PHP)",
@@ -127,7 +128,7 @@ export function payrollCsv(report: PayrollReport, branchName: string) {
       r.name,
       r.rateClassName,
       r.line.sessions,
-      r.rateCentavos === null ? "Varies" : pesos(r.rateCentavos),
+      r.sharePct === null ? "Varies" : r.sharePct,
       pesos(r.line.grossCentavos),
       pesos(r.line.therapistShareCentavos),
       pesos(r.line.clinicShareCentavos),
