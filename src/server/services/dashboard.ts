@@ -39,7 +39,8 @@ function pctChange(now: number, before: number) {
 /**
  * Money received per Manila month: cash collected for sessions (the part not
  * paid from credit) plus advance top-ups. Credit spent was already counted
- * when it was topped up, so it is not counted again.
+ * when it was topped up, so it is not counted again. Deleted patients' money
+ * is left out, matching the rest of the dashboard.
  */
 async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: Date) {
   const sessionMonth = monthKey(payments.createdAt);
@@ -49,9 +50,11 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
       total: sql<string>`sum(${payments.amountCentavos} - ${payments.creditAppliedCentavos})`,
     })
     .from(payments)
+    .innerJoin(patients, eq(payments.patientId, patients.id))
     .where(
       and(
         eq(payments.branchId, branchId),
+        isNull(patients.deletedAt),
         livePayment,
         gte(payments.createdAt, from),
         lt(payments.createdAt, to),
@@ -66,6 +69,7 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
     .where(
       and(
         eq(patients.branchId, branchId),
+        isNull(patients.deletedAt),
         eq(creditLedger.type, "top_up"),
         liveCredit,
         gte(creditLedger.createdAt, from),
