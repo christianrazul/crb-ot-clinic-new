@@ -32,12 +32,12 @@ describe("can", () => {
     ).toBe(false);
   });
 
-  it("keeps therapists to their own patients and away from money and status changes", () => {
-    expect(
-      can(ACTORS.therapist, "patient:read", { branchId: "br_bangkal", ownedByActor: true }),
-    ).toBe(true);
+  it("lets therapists read every patient but edit only their own, and keeps them from money and status changes", () => {
     expect(
       can(ACTORS.therapist, "patient:read", { branchId: "br_bangkal", ownedByActor: false }),
+    ).toBe(true);
+    expect(
+      can(ACTORS.therapist, "patient:edit", { branchId: "br_bangkal", ownedByActor: false }),
     ).toBe(false);
     expect(can(ACTORS.therapist, "note:write", { ownedByActor: true })).toBe(true);
     for (const action of [

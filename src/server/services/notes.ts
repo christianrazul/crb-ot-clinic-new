@@ -92,7 +92,7 @@ export async function getNoteContext(db: DbExecutor, actor: Actor, appointmentId
   const row = await appointmentForNotes(db, appointmentId);
   const own = actor.role === "therapist" ? row.appointment.staffId === actor.staffId : true;
   if (!own) throw new NotFoundError();
-  if (!(await patientIsVisibleTo(db, actor, row.patient))) throw new NotFoundError();
+  if (!patientIsVisibleTo(actor, row.patient)) throw new NotFoundError();
   assertCan(actor, "note:read", { branchId: row.appointment.branchId, ownedByActor: own });
 
   const [toDate] = await db
@@ -217,8 +217,8 @@ export async function editNote(
 /** One past session and its latest note, for the patient Sessions tab. */
 export async function getHistoryDetail(db: DbExecutor, actor: Actor, appointmentId: string) {
   const row = await appointmentForNotes(db, appointmentId);
-  if (!(await patientIsVisibleTo(db, actor, row.patient))) throw new NotFoundError();
-  assertCan(actor, "note:read", { branchId: row.appointment.branchId, ownedByActor: true });
+  if (!patientIsVisibleTo(actor, row.patient)) throw new NotFoundError();
+  assertCan(actor, "note:read", { branchId: row.appointment.branchId });
   const [branch] = await db
     .select({ name: branches.name })
     .from(branches)

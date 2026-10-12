@@ -20,7 +20,7 @@ const SCREENS = {
   therapist: [
     ["/my-day", "Good morning, Jolyn"],
     ["/schedule", "My schedule"],
-    ["/patients", "My patients"],
+    ["/patients", "Patients"],
   ],
 } as const;
 
@@ -226,13 +226,15 @@ test.describe("patients", () => {
 test.describe("therapist", () => {
   test.use({ storageState: storageFor("therapist") });
 
-  test("only sees their own patients and no billing or credit", async ({ page }) => {
+  test("sees every patient at the branch but no billing or credit", async ({ page }) => {
     await page.goto("/patients");
     await expect(page.getByRole("tab", { name: /Credit/ })).toHaveCount(0);
     await expect(page.getByText(/owes/)).toHaveCount(0);
-    // Sofia Reyes is a SPED patient with no link to Dela Rosa.
-    await expect(page.getByRole("row", { name: /Sofia Reyes/ })).toHaveCount(0);
+    await page.goto("/patients?q=Liam");
     await expect(page.getByRole("row", { name: /Liam Santos/ })).toBeVisible();
+    // Sofia Reyes is a SPED patient with no link to Dela Rosa.
+    await page.goto("/patients?q=Sofia");
+    await expect(page.getByRole("row", { name: /Sofia Reyes/ })).toBeVisible();
 
     await page.goto("/billing");
     await expect(page).toHaveURL(/\/my-day$/);

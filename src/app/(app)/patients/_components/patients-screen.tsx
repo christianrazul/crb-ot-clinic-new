@@ -45,12 +45,10 @@ const SERVICE_FILTERS = ["all", "ot", "speech", "sped"] as const;
 export function PatientsScreen({
   params,
   data,
-  isTherapist,
   branchName,
 }: {
   params: PatientListParams;
   data: Data;
-  isTherapist: boolean;
   branchName: string;
 }) {
   const { setParams, pending } = useUrlParams(DEFAULTS);
@@ -72,7 +70,7 @@ export function PatientsScreen({
   return (
     <Page className="gap-4">
       <PageHeader
-        title={isTherapist ? "My patients" : "Patients"}
+        title="Patients"
         description={`${data.activeCount} active patients at ${branchName}`}
       >
         {data.canCreate && (
@@ -229,9 +227,7 @@ export function PatientsScreen({
                       description={
                         filtersActive
                           ? "Try another service or clear the search."
-                          : isTherapist
-                            ? "Patients assigned to you will show here."
-                            : "Add the first patient with the button above."
+                          : "Add the first patient with the button above."
                       }
                       className="py-12"
                     />
@@ -278,7 +274,7 @@ export function PatientsScreen({
             tab={params.tab === "credit" && !data.canSeeMoney ? "overview" : params.tab}
             onTabChange={(tab) => setParams({ tab })}
             canWrite={data.canWrite}
-            canEdit={data.canCreate}
+            canEdit={detail.canEditDetails}
             isTherapist={data.isTherapist}
             canSeeMoney={data.canSeeMoney}
             staffOptions={data.staffOptions}

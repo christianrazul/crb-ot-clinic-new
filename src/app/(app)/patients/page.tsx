@@ -16,12 +16,5 @@ export default async function Page({
   const session = await requireScreen("patients");
   const params = patientListParams.parse(await searchParams);
   const data = await loadPatientsPage(session, params);
-  return (
-    <PatientsScreen
-      params={params}
-      data={data}
-      isTherapist={session.actor.role === "therapist"}
-      branchName={session.branch.name}
-    />
-  );
+  return <PatientsScreen params={params} data={data} branchName={session.branch.name} />;
 }

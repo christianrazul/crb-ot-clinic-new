@@ -5,7 +5,7 @@ import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { ageOn } from "@/lib/age";
 import { patientFormSchema } from "@/lib/validation/patient";
 import type { Actor } from "@/server/auth/actor";
-import { assertCan, ForbiddenError } from "@/server/auth/permissions";
+import { assertCan, can, ForbiddenError } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { patientAppointments, notesForPatient } from "@/server/db/queries/appointments";
@@ -25,13 +25,10 @@ import { NotFoundError, ValidationError } from "./errors";
 
 const startOfToday = () => fromManilaLocal(clinicToday(), "00:00");
 
-/** Patients the actor may see at a branch. Therapists only get their own. */
+/** Patients at a branch. Every role sees them all, therapists included. */
 export async function listPatientsFor(db: DbExecutor, actor: Actor, filter: PatientListFilter) {
   assertCan(actor, "patient:read", { branchId: filter.branchId });
-  return listPatients(db, {
-    ...filter,
-    onlyStaffId: actor.role === "therapist" ? (actor.staffId ?? "none") : null,
-  });
+  return listPatients(db, filter);
 }
 
 /**
@@ -80,30 +77,25 @@ export async function patientListPage(
   return { rows, total, page, pageSize };
 }
 
-/** Whether the actor may see this patient's clinical record. */
-export async function patientIsVisibleTo(
-  db: DbExecutor,
-  actor: Actor,
-  patient: { id: string; branchId: string },
-) {
-  if (!actor.branchIds.includes(patient.branchId)) return false;
-  if (actor.role !== "therapist") return true;
-  return Boolean(actor.staffId && (await isPatientOfStaff(db, patient.id, actor.staffId)));
+/**
+ * Whether the actor may see this patient's clinical record: anyone at the
+ * patient's branch, so therapists can read each other's notes.
+ */
+export function patientIsVisibleTo(actor: Actor, patient: { branchId: string }) {
+  return actor.branchIds.includes(patient.branchId);
 }
 
-/**
- * One patient's record. A therapist asking for someone else's patient gets the
- * same "not found" as a missing record, so ids cannot be probed.
- */
+/** Whether a therapist treats this patient, as primary or backup. The desk treats no one. */
+async function treatsPatient(db: DbExecutor, actor: Actor, patientId: string) {
+  return Boolean(actor.staffId && (await isPatientOfStaff(db, patientId, actor.staffId)));
+}
+
+/** One patient's record. */
 export async function getPatientRecord(db: DbExecutor, actor: Actor, patientId: string) {
   const record = await getPatient(db, patientId);
   if (!record) throw new NotFoundError();
-  const visible = await patientIsVisibleTo(db, actor, record.patient);
-  if (!visible)
-    throw actor.branchIds.includes(record.patient.branchId)
-      ? new NotFoundError()
-      : new ForbiddenError();
-  assertCan(actor, "patient:read", { branchId: record.patient.branchId, ownedByActor: true });
+  if (!patientIsVisibleTo(actor, record.patient)) throw new ForbiddenError();
+  assertCan(actor, "patient:read", { branchId: record.patient.branchId });
   return record;
 }
 
@@ -117,7 +109,7 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
   const staffIds = [record.patient.primaryStaffId, ...record.backupStaffIds].filter(
     Boolean,
   ) as string[];
-  const [staffRows, history, notes, credit] = await Promise.all([
+  const [staffRows, history, notes, credit, treats] = await Promise.all([
     staffIds.length
       ? db.select().from(staff).where(inArray(staff.id, staffIds))
       : Promise.resolve([]),
@@ -128,6 +120,7 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
       : Promise.all([creditBalance(db, patientId), creditEntries(db, patientId)]).then(
           ([balance, entries]) => ({ balance, entries }),
         ),
+    actor.role === "therapist" ? treatsPatient(db, actor, patientId) : Promise.resolve(false),
   ]);
   const nameOf = (id: string | null) => staffRows.find((s) => s.id === id)?.shortName ?? null;
   return {
@@ -138,14 +131,17 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
     history,
     notes,
     credit,
+    /** A therapist may edit the details of patients they treat; the desk edits anyone. */
+    canEditDetails: can(actor, "patient:edit", {
+      branchId: record.patient.branchId,
+      ownedByActor: actor.role !== "therapist" || treats,
+    }),
   };
 }
 
 /**
- * Typeahead for the booking dialog and the command palette. Active patients
- * only when booking. Therapists search their own patients, except when booking
- * (`forBooking`): then they get every active patient at the branch, so they can
- * book anyone, but only see the guardian of their own.
+ * Typeahead for the booking dialog and the command palette: every patient at
+ * the branch, active ones only when booking.
  */
 export async function searchPatients(
   db: DbExecutor,
@@ -162,14 +158,7 @@ export async function searchPatients(
   if (input.forBooking) assertCan(actor, "appointment:book", { branchId: input.branchId });
   const term = input.query.trim();
   const like = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  const own =
-    actor.role === "therapist"
-      ? or(
-          eq(patients.primaryStaffId, actor.staffId ?? "none"),
-          sql`exists (select 1 from ${patientBackupStaff} where ${patientBackupStaff.patientId} = ${patients.id} and ${patientBackupStaff.staffId} = ${actor.staffId ?? "none"})`,
-        )
-      : undefined;
-  const rows = await db
+  return db
     .select({
       id: patients.id,
       firstName: patients.firstName,
@@ -178,7 +167,6 @@ export async function searchPatients(
       status: patients.status,
       guardianName: guardians.name,
       guardianRelationship: guardians.relationship,
-      own: own ? sql<boolean>`${own}` : sql<boolean>`true`,
     })
     .from(patients)
     .leftJoin(guardians, and(eq(guardians.patientId, patients.id), eq(guardians.isPrimary, true)))
@@ -187,21 +175,16 @@ export async function searchPatients(
         eq(patients.branchId, input.branchId),
         isNull(patients.deletedAt),
         input.bookableOnly || input.forBooking ? eq(patients.status, "active") : undefined,
-        input.forBooking ? undefined : own,
         term
           ? or(
               ilike(sql`${patients.firstName} || ' ' || ${patients.lastName}`, like),
-              // Guardian names match only where the actor may see them.
-              and(own, ilike(guardians.name, like)),
+              ilike(guardians.name, like),
             )
           : undefined,
       ),
     )
     .orderBy(asc(patients.firstName), asc(patients.lastName))
     .limit(input.limit ?? 20);
-  return rows.map(({ own: isOwn, ...row }) =>
-    isOwn ? row : { ...row, guardianName: null, guardianRelationship: null },
-  );
 }
 
 async function assertStaffAtBranch(db: DbExecutor, branchId: string, staffIds: string[]) {
@@ -297,12 +280,10 @@ export async function updatePatient(
   if (!existing) throw new NotFoundError();
   const values = patientFormSchema.parse(input.values);
   if (actor.role === "therapist") {
-    // Their own patients only, and who treats the patient stays as the desk set it.
-    // Someone else's patient looks missing, so ids can't be probed.
-    if (!(await patientIsVisibleTo(db, actor, existing.patient))) throw new NotFoundError();
+    // Patients they treat only, and who treats the patient stays as the desk set it.
     assertCan(actor, "patient:edit", {
       branchId: existing.patient.branchId,
-      ownedByActor: true,
+      ownedByActor: await treatsPatient(db, actor, input.patientId),
     });
     values.primaryStaffId = existing.patient.primaryStaffId ?? "";
     values.backupStaffIds = existing.backupStaffIds;

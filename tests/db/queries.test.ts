@@ -53,16 +53,7 @@ describe("patients", () => {
     expect((await listPatients(testDb(), { ...base, status: "inactive" })).total).toBe(0);
   });
 
-  it("scopes to a therapist's own patients (primary or backup)", async () => {
-    const mine = await listPatients(testDb(), {
-      ...base,
-      onlyStaffId: "stf_delarosa",
-      pageSize: 50,
-    });
-    const names = mine.rows.map((p) => p.firstName);
-    expect(names).toContain("Liam"); // primary
-    expect(names).toContain("Enzo"); // backup
-    expect(names).not.toContain("Sofia");
+  it("knows whether a therapist treats a patient (primary or backup)", async () => {
     expect(await isPatientOfStaff(testDb(), "pat_04", "stf_delarosa")).toBe(false);
     expect(await isPatientOfStaff(testDb(), "pat_01", "stf_delarosa")).toBe(true);
   });

@@ -55,10 +55,7 @@ export const NAV: Record<Role, NavSection[]> = {
     { heading: "", items: [item("my-day", "My day", ClipboardList)] },
     {
       heading: "Clinic",
-      items: [
-        item("schedule", "My schedule", CalendarDays),
-        item("patients", "My patients", Users),
-      ],
+      items: [item("schedule", "My schedule", CalendarDays), item("patients", "Patients", Users)],
     },
   ],
 };

@@ -10,8 +10,6 @@ export type GuardianRow = typeof guardians.$inferSelect;
 
 export type PatientListFilter = {
   branchId: string;
-  /** Therapists only see patients where they are primary or backup. */
-  onlyStaffId?: string | null;
   query?: string;
   service?: "ot" | "speech" | "sped";
   status?: "active" | "inactive";
@@ -30,16 +28,6 @@ function filterWhere(filter: PatientListFilter): SQL {
   ];
   if (filter.service) conditions.push(eq(patients.service, filter.service));
   if (filter.status) conditions.push(eq(patients.status, filter.status));
-  if (filter.onlyStaffId) {
-    conditions.push(
-      or(
-        eq(patients.primaryStaffId, filter.onlyStaffId),
-        exists(
-          sql`(select 1 from ${patientBackupStaff} where ${patientBackupStaff.patientId} = ${patients.id} and ${patientBackupStaff.staffId} = ${filter.onlyStaffId})`,
-        ),
-      ),
-    );
-  }
   const term = filter.query?.trim();
   if (term) {
     const like = likeTerm(term);

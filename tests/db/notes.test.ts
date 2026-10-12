@@ -85,12 +85,13 @@ describe("reading notes", () => {
     ).rejects.toThrow(/couldn't find/);
   });
 
-  it("history detail shows the latest note to the desk", async () => {
+  it("history detail shows the latest note to the desk and to other therapists", async () => {
     const detail = await getHistoryDetail(testDb(), ACTORS.desk, "apt_20260819_10_delarosa");
     expect(detail.note?.authorName).toBe("J. Dela Rosa, OTRP");
+    // Another therapist's session with another therapist's patient.
     await expect(
       getHistoryDetail(testDb(), ACTORS.therapist, "apt_20260822_09_garcia"),
-    ).rejects.toThrow(/couldn't find/);
+    ).resolves.toBeTruthy();
   });
 
   it("notes due: Liam today is on time, Althea's Thursday session is two days late", async () => {

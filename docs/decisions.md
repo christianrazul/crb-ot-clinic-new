@@ -714,3 +714,11 @@ Therapists can book sessions with themselves from My day, the schedule and the c
 What stays the same: rescheduling, cancelling and status changes remain with the owner and the desk. In the booking search, a therapist sees the guardian only for their own patients, and guardian names only match those. Booking a session doesn't make the patient theirs: the session appears on their schedule and they can write its note, but the patient record still looks missing unless they're the primary or a backup therapist.
 
 Permissions: `appointment:book` now includes therapists (themselves only, no rescheduling).
+
+### D-123: Therapists see every patient at their branch
+
+"My patients" is now "Patients" for therapists too, and lists every patient at the branch. Any therapist can open any patient's record: details, guardian, every session with any therapist, and the notes. A clinic this size works as one team, and seeing each other's notes matters more than keeping records apart. It also stops a therapist adding a patient who is already enrolled because they couldn't see them.
+
+What stays the same: a therapist edits the details only of patients they treat (primary or backup), and the edit button only shows on those. They write and edit notes only for their own sessions. Money stays hidden: no balances, credit or payments. The schedule screen still shows only their own column.
+
+This replaces the parts of D-120 and D-122 that hid other therapists' patients: someone else's patient no longer looks missing, and booking search shows guardians for everyone. Permissions: `patient:read` and `note:read` are no longer own-only for therapists; `patient:edit` still is.

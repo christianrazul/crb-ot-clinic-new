@@ -5,8 +5,7 @@ import { ForbiddenError } from "@/server/auth/permissions";
 import { auditLog, appointments } from "@/server/db/schema";
 import { setAppointmentStatus } from "@/server/services/appointments";
 import { getCreditLedger, listBillingDay } from "@/server/services/billing";
-import { NotFoundError } from "@/server/services/errors";
-import { getPatientRecord, listPatientsFor } from "@/server/services/patients";
+import { getPatientDetail, getPatientRecord, listPatientsFor } from "@/server/services/patients";
 import { createAccount } from "@/server/services/users";
 
 import { ACTORS } from "../support/actors";
@@ -18,19 +17,19 @@ import { inRollback, testDb } from "./support";
 describe("a therapist", () => {
   const me = ACTORS.therapist;
 
-  it("cannot read another therapist's patient", async () => {
+  it("reads every patient at their branch, including another therapist's", async () => {
     // Sofia Reyes is Anna Garcia's SPED patient.
-    await expect(getPatientRecord(testDb(), me, "pat_04")).rejects.toBeInstanceOf(NotFoundError);
-    await expect(getPatientRecord(testDb(), me, "pat_01")).resolves.toMatchObject({
-      patient: { firstName: "Liam" },
+    await expect(getPatientRecord(testDb(), me, "pat_04")).resolves.toMatchObject({
+      patient: { firstName: "Sofia" },
     });
+    const { rows } = await listPatientsFor(testDb(), me, { branchId: "br_bangkal", pageSize: 50 });
+    expect(rows.map((p) => p.firstName)).toEqual(expect.arrayContaining(["Liam", "Sofia"]));
   });
 
-  it("only lists their own patients, whatever filter they send", async () => {
-    const { rows } = await listPatientsFor(testDb(), me, { branchId: "br_bangkal", pageSize: 50 });
-    expect(rows.map((p) => p.firstName)).not.toContain("Sofia");
-    const search = await listPatientsFor(testDb(), me, { branchId: "br_bangkal", query: "Sofia" });
-    expect(search.total).toBe(0);
+  it("edits details only of patients they treat", async () => {
+    expect((await getPatientDetail(testDb(), me, "pat_01")).canEditDetails).toBe(true);
+    expect((await getPatientDetail(testDb(), me, "pat_04")).canEditDetails).toBe(false);
+    expect((await getPatientDetail(testDb(), ACTORS.desk, "pat_04")).canEditDetails).toBe(true);
   });
 
   it("cannot read billing or credit", async () => {

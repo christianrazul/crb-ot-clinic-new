@@ -5,7 +5,7 @@ import { isMobileProject, storageFor } from "./helpers";
 const NAV_BY_ROLE = {
   superadmin: ["Dashboard", "Schedule", "Patients", "Billing & payments", "Payroll", "Settings"],
   secretary: ["Today", "Schedule", "Patients", "Billing & payments"],
-  therapist: ["My day", "My schedule", "My patients"],
+  therapist: ["My day", "My schedule", "Patients"],
 } as const;
 
 const HOME_BY_ROLE = { superadmin: "/dashboard", secretary: "/today", therapist: "/my-day" };

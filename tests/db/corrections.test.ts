@@ -20,7 +20,6 @@ import {
   setPatientStatus,
   updatePatient,
 } from "@/server/services/patients";
-import { NotFoundError } from "@/server/services/errors";
 
 import { ACTORS } from "../support/actors";
 import { failureCode, inRollback, PG } from "./support";
@@ -253,7 +252,7 @@ describe("therapists adding patients", () => {
       const other = { id: "pat_02" };
       await expect(
         updatePatient(tx, ACTORS.therapist, { patientId: other.id, values: newPatient }),
-      ).rejects.toBeInstanceOf(NotFoundError);
+      ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
         setPatientStatus(tx, ACTORS.therapist, { patientId: "pat_01", status: "inactive" }),
       ).rejects.toBeInstanceOf(ForbiddenError);

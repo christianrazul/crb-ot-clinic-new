@@ -132,18 +132,18 @@ describe("patient CRUD", () => {
       ).rejects.toBeInstanceOf(ForbiddenError);
     }));
 
-  it("therapist search only finds their own patients", async () => {
+  it("therapist search finds every patient at the branch, with guardians", async () => {
     const hits = await searchPatients(testDb(), ACTORS.therapist, {
       branchId: "br_bangkal",
       query: "",
       bookableOnly: false,
       limit: 50,
     });
-    expect(hits.map((h) => h.firstName)).toContain("Liam");
-    expect(hits.map((h) => h.firstName)).not.toContain("Sofia");
+    expect(hits.map((h) => h.firstName)).toEqual(expect.arrayContaining(["Liam", "Sofia"]));
+    expect(hits.find((h) => h.firstName === "Sofia")?.guardianName).toBeTruthy();
   });
 
-  it("therapist booking search finds every active patient, guardians only for their own", async () => {
+  it("therapist booking search finds every active patient", async () => {
     const hits = await searchPatients(testDb(), ACTORS.therapist, {
       branchId: "br_bangkal",
       query: "",
@@ -151,10 +151,7 @@ describe("patient CRUD", () => {
       forBooking: true,
       limit: 50,
     });
-    const liam = hits.find((h) => h.firstName === "Liam");
-    const sofia = hits.find((h) => h.firstName === "Sofia");
-    expect(liam?.guardianName).toBeTruthy();
-    expect(sofia).toMatchObject({ guardianName: null, guardianRelationship: null });
+    expect(hits.map((h) => h.firstName)).toEqual(expect.arrayContaining(["Liam", "Sofia"]));
     expect(hits.every((h) => h.status === "active")).toBe(true);
   });
 });
