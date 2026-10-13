@@ -24,7 +24,8 @@ test.describe("therapists adding patients", () => {
 
     await page.getByRole("button", { name: "Edit details" }).click();
     const edit = page.getByRole("dialog", { name: "Edit patient" });
-    await expect(edit.getByText("The front desk sets who treats this patient.")).toBeVisible();
+    await expect(edit.getByText("Primary therapist", { exact: true })).toBeVisible();
+    await expect(edit.getByText("Backup therapists", { exact: true })).toBeVisible();
     await edit.getByLabel("Diagnosis").fill("Fine motor delay");
     await edit.getByRole("button", { name: "Save patient" }).click();
     await expect(edit).toBeHidden();

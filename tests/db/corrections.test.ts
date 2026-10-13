@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { ForbiddenError } from "@/server/auth/permissions";
 import { creditBalance, paymentForAppointment } from "@/server/db/queries/billing";
-import { auditLog, creditLedger, patients, payments } from "@/server/db/schema";
+import { auditLog, creditLedger, patientBackupStaff, patients, payments } from "@/server/db/schema";
 import {
   adjustCredit,
   collectPayment,
@@ -220,7 +220,7 @@ describe("therapists adding patients", () => {
     lastName: "Reyes",
     service: "ot",
     enrolledOn: "2026-08-20",
-    primaryStaffId: "stf_tan", // ignored for therapists
+    primaryStaffId: "stf_tan", // ignored when a therapist adds a patient
     backupStaffIds: ["stf_ramos"],
   };
 
@@ -238,15 +238,19 @@ describe("therapists adding patients", () => {
       expect(mine.rows.map((p) => p.id)).toContain(created.id);
     }));
 
-  it("they edit details of their own patients only, and can't reassign or deactivate", () =>
+  it("they edit details and therapists of their own patients only, and can't deactivate", () =>
     inRollback(async (tx) => {
-      const [own] = await tx.select().from(patients).where(eq(patients.id, "pat_01"));
       await updatePatient(tx, ACTORS.therapist, {
         patientId: "pat_01",
         values: { ...newPatient, firstName: "Liam", lastName: "Santos", diagnosis: "Updated" },
       });
       const [after] = await tx.select().from(patients).where(eq(patients.id, "pat_01"));
-      expect(after).toMatchObject({ diagnosis: "Updated", primaryStaffId: own!.primaryStaffId });
+      expect(after).toMatchObject({ diagnosis: "Updated", primaryStaffId: "stf_tan" });
+      const backups = await tx
+        .select()
+        .from(patientBackupStaff)
+        .where(eq(patientBackupStaff.patientId, "pat_01"));
+      expect(backups.map((b) => b.staffId)).toEqual(["stf_ramos"]);
 
       // Amara Cruz is neither Jolyn's patient nor her backup patient.
       const other = { id: "pat_02" };
