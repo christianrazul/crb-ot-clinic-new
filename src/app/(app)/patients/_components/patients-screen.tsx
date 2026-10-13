@@ -272,6 +272,35 @@ export function PatientsScreen({
             </div>
           </div>
         </Card>
+        {!detail && (
+          <Card className="hidden border-dashed xl:block">
+            {list.rows.length ? (
+              <EmptyState
+                title="No patient selected"
+                description="Pick a patient from the list to see their details."
+                className="py-16"
+              />
+            ) : (
+              <EmptyState
+                title={filtersActive ? "No patient to show" : "No patients yet"}
+                description={
+                  filtersActive
+                    ? "Clear the filters to see patients here."
+                    : "Patient details will show here once you add someone."
+                }
+                action={
+                  data.canCreate &&
+                  !filtersActive && (
+                    <Button size="sm" onClick={() => setCreating(true)}>
+                      <UserPlus /> Add patient
+                    </Button>
+                  )
+                }
+                className="py-16"
+              />
+            )}
+          </Card>
+        )}
         {detail && (
           <PatientDetail
             key={detail.patient.id}
