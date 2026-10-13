@@ -204,7 +204,7 @@ test.describe("patients", () => {
   test("search, filter, keyboard open and empty state", async ({ page }) => {
     await page.goto("/patients");
     await page.getByRole("radio", { name: "SPED" }).click();
-    await expect(page.locator("tbody tr")).toHaveCount(3);
+    await expect(page.locator("tbody tr")).toHaveCount(4); // three SPED patients and one who also receives it
 
     await page.getByRole("row", { name: /Jaz Ocampo/ }).focus();
     await page.keyboard.press("Enter");
