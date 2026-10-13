@@ -219,6 +219,7 @@ export function buildSeedRows() {
       diagnosis: p.diagnosis,
       enrolledOn: p.enrolledOn,
       service: p.service,
+      services: [p.service, ...(p.otherServices ?? [])],
       primaryStaffId: p.primaryStaffId || null,
       status: p.status,
       recurringSlot: p.recurringSlot,

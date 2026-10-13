@@ -18,6 +18,8 @@ export type PatientFixture = {
   /** yyyy-MM-dd */
   enrolledOn: string;
   service: Exclude<ServiceKey, "aide" | "none">;
+  /** Services besides the main one. */
+  otherServices?: Exclude<ServiceKey, "aide" | "none">[];
   primaryStaffId: string;
   backupStaffId: string | null;
   status: "active" | "inactive";
@@ -44,6 +46,7 @@ export const PATIENTS: PatientFixture[] = [
     diagnosis: "Global developmental delay",
     enrolledOn: "2025-03-02",
     service: "ot",
+    otherServices: ["speech"],
     primaryStaffId: "stf_delarosa",
     backupStaffId: "stf_tan",
     status: "active",
@@ -92,6 +95,7 @@ export const PATIENTS: PatientFixture[] = [
     diagnosis: "ASD Level 1",
     enrolledOn: "2026-01-08",
     service: "ot",
+    otherServices: ["sped"],
     primaryStaffId: "stf_ramos",
     backupStaffId: "stf_delarosa",
     status: "active",

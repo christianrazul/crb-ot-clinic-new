@@ -239,6 +239,7 @@ export async function getHistoryDetail(db: DbExecutor, actor: Actor, appointment
     patient: {
       name: `${row.patient.firstName} ${row.patient.lastName}`,
       service: row.patient.service,
+      services: row.patient.services,
     },
     note: note ?? null,
   };

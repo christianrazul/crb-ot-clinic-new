@@ -49,7 +49,8 @@ describe("patients", () => {
   });
 
   it("filters by service and status", async () => {
-    expect((await listPatients(testDb(), { ...base, service: "sped" })).total).toBe(3);
+    // Three SPED-main patients plus pat_03, who also gets SPED.
+    expect((await listPatients(testDb(), { ...base, service: "sped" })).total).toBe(4);
     expect((await listPatients(testDb(), { ...base, status: "inactive" })).total).toBe(0);
   });
 

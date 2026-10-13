@@ -203,6 +203,11 @@ export function PatientsScreen({
                       <span className="flex items-center gap-2 whitespace-nowrap">
                         <SvcDot service={patient.service} />
                         {SERVICE_SHORT[patient.service]}
+                        {patient.services.length > 1 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{patient.services.length - 1}
+                          </span>
+                        )}
                       </span>
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell xl:hidden min-[87.5rem]:table-cell">

@@ -205,6 +205,7 @@ function patientColumns(values: ReturnType<typeof patientFormSchema.parse>) {
     gender: values.gender,
     diagnosis: values.diagnosis,
     service: values.service,
+    services: [values.service, ...new Set(values.otherServices)],
     enrolledOn: values.enrolledOn,
     primaryStaffId: values.primaryStaffId || null,
     goalsNotes: values.goalsNotes,
@@ -280,13 +281,11 @@ export async function updatePatient(
   if (!existing) throw new NotFoundError();
   const values = patientFormSchema.parse(input.values);
   if (actor.role === "therapist") {
-    // Patients they treat only, and who treats the patient stays as the desk set it.
+    // Patients they treat only; they may reassign the primary and backup therapists.
     assertCan(actor, "patient:edit", {
       branchId: existing.patient.branchId,
       ownedByActor: await treatsPatient(db, actor, input.patientId),
     });
-    values.primaryStaffId = existing.patient.primaryStaffId ?? "";
-    values.backupStaffIds = existing.backupStaffIds;
   } else {
     assertCan(actor, "patient:edit", { branchId: existing.patient.branchId });
   }

@@ -367,6 +367,7 @@ export async function bookAppointment(
         firstName,
         lastName: rest.join(" ") || "-",
         service: type.service ?? "ot",
+        services: [type.service ?? "ot"],
         enrolledOn: today,
         primaryStaffId: v.staffId,
         goalsNotes: "New patient. Intake pending.",

@@ -52,6 +52,7 @@ function defaultsFrom(existing?: PatientDetailData): PatientFormInput {
     gender: p?.gender ?? "unspecified",
     diagnosis: p?.diagnosis ?? "",
     service: p?.service ?? "ot",
+    otherServices: p?.services.filter((key) => key !== p.service) ?? [],
     enrolledOn: p?.enrolledOn ?? new Date().toISOString().slice(0, 10),
     primaryStaffId: p?.primaryStaffId ?? "",
     backupStaffIds: existing?.backupStaffIds ?? [],
@@ -77,7 +78,7 @@ export function PatientFormDialog({
   staffOptions: StaffOption[];
   existing?: PatientDetailData;
   onSaved?: (patientId: string) => void;
-  /** A therapist's form: no assignment fields; the server assigns the patient to them. */
+  /** A therapist adding a patient: no assignment fields; the server assigns the patient to them. */
   assignedToMe?: boolean;
 }) {
   const form = useForm<PatientFormInput, unknown, PatientFormValues>({
@@ -87,6 +88,7 @@ export function PatientFormDialog({
   const [serverError, setServerError] = React.useState<string | null>(null);
   const errors = form.formState.errors;
   const primary = useWatch({ control: form.control, name: "primaryStaffId" });
+  const mainService = useWatch({ control: form.control, name: "service" });
 
   const submit = form.handleSubmit(async (values) => {
     setServerError(null);
@@ -171,12 +173,22 @@ export function PatientFormDialog({
             })}
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="pf-service">Service</Label>
+                <Label htmlFor="pf-service">Main service</Label>
                 <Controller
                   control={form.control}
                   name="service"
                   render={({ field: f }) => (
-                    <Select value={f.value} onValueChange={f.onChange}>
+                    <Select
+                      value={f.value}
+                      onValueChange={(next) => {
+                        f.onChange(next);
+                        // The main service can't also be listed as an extra one.
+                        form.setValue(
+                          "otherServices",
+                          (form.getValues("otherServices") ?? []).filter((v) => v !== next),
+                        );
+                      }}
+                    >
                       <SelectTrigger id="pf-service">
                         <SelectValue />
                       </SelectTrigger>
@@ -196,11 +208,44 @@ export function PatientFormDialog({
               </div>
               {field("enrolledOn", "Enrolled on", { type: "date" })}
             </div>
-            {assignedToMe ? (
+            <fieldset className="grid gap-2">
+              <legend className="mb-1 text-sm font-medium">Also receives</legend>
+              <Controller
+                control={form.control}
+                name="otherServices"
+                render={({ field: f }) => (
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {(["ot", "speech", "sped"] as const)
+                      .filter((key) => key !== mainService)
+                      .map((key) => {
+                        const checked = (f.value ?? []).includes(key);
+                        return (
+                          <label key={key} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(next) =>
+                                f.onChange(
+                                  next
+                                    ? [...(f.value ?? []), key]
+                                    : (f.value ?? []).filter((v) => v !== key),
+                                )
+                              }
+                            />
+                            <SvcDot service={key} />
+                            {SERVICE_LABELS[key]}
+                          </label>
+                        );
+                      })}
+                  </div>
+                )}
+              />
+              {errors.otherServices && (
+                <p className="text-xs text-danger-strong">{errors.otherServices.message}</p>
+              )}
+            </fieldset>
+            {assignedToMe && !existing ? (
               <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
-                {existing
-                  ? "The front desk sets who treats this patient."
-                  : "This patient will be assigned to you as their primary therapist."}
+                This patient will be assigned to you as their primary therapist.
               </p>
             ) : (
               <>

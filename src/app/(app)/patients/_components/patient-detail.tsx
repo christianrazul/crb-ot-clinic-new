@@ -197,10 +197,12 @@ export function PatientDetail({
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <Badge variant={active ? "success" : "muted"}>{active ? "Active" : "Inactive"}</Badge>
-            <Badge variant="outline">
-              <SvcDot service={patient.service} />
-              {SERVICE_LABELS[patient.service]}
-            </Badge>
+            {patient.services.map((key) => (
+              <Badge key={key} variant="outline">
+                <SvcDot service={key} />
+                {SERVICE_LABELS[key]}
+              </Badge>
+            ))}
           </div>
         </div>
         {!canWrite && canEdit && (
@@ -386,7 +388,7 @@ export function PatientDetail({
                     ? detail.backupStaffNames.join(", ")
                     : "None assigned"}
                 </div>
-                {canWrite && !detail.backupStaffNames.length && (
+                {(canWrite || canEdit) && !detail.backupStaffNames.length && (
                   <Button
                     variant="link"
                     size="sm"

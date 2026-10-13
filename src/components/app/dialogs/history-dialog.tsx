@@ -52,7 +52,10 @@ export function HistoryDialog({ open, onOpenChange, appointmentId }: Props) {
                 items={[
                   { label: "Time", value: formatManila(new Date(data.startsAt), "time") },
                   { label: "Therapist", value: data.staffName },
-                  { label: "Service", value: SERVICE_LABELS[data.patient.service] },
+                  {
+                    label: "Services",
+                    value: data.patient.services.map((key) => SERVICE_LABELS[key]).join(", "),
+                  },
                   { label: "Branch", value: data.branchName },
                 ]}
               />

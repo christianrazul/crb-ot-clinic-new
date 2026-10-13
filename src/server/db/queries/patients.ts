@@ -1,6 +1,19 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, exists, ilike, isNull, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  ilike,
+  isNull,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
 import { guardians, patientBackupStaff, patients } from "../schema";
@@ -26,7 +39,7 @@ function filterWhere(filter: PatientListFilter): SQL {
     eq(patients.branchId, filter.branchId),
     isNull(patients.deletedAt),
   ];
-  if (filter.service) conditions.push(eq(patients.service, filter.service));
+  if (filter.service) conditions.push(arrayContains(patients.services, [filter.service]));
   if (filter.status) conditions.push(eq(patients.status, filter.status));
   const term = filter.query?.trim();
   if (term) {

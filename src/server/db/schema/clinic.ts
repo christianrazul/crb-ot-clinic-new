@@ -156,7 +156,13 @@ export const patients = pgTable(
     gender: genderEnum().notNull().default("unspecified"),
     diagnosis: text().notNull().default(""),
     enrolledOn: date({ mode: "string" }).notNull(),
+    /** The main service; it colors the patient's avatar. Always one of `services`. */
     service: patientServiceEnum().notNull(),
+    /** Every service the patient receives, the main one included. */
+    services: patientServiceEnum()
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
     primaryStaffId: text().references(() => staff.id),
     status: patientStatusEnum().notNull().default("active"),
     /** Display label of the weekly booking until series drive it, e.g. "Mon / Wed 9:00". */
@@ -171,6 +177,7 @@ export const patients = pgTable(
     index().on(t.branchId),
     index().on(t.primaryStaffId),
     index("patients_name_idx").on(sql`lower(${t.lastName})`, sql`lower(${t.firstName})`),
+    check("patients_services_include_main", sql`${t.service} = any(${t.services})`),
   ],
 );
 

@@ -12,6 +12,11 @@ export const patientFormSchema = z
     gender: z.enum(["male", "female", "unspecified"]).default("unspecified"),
     diagnosis: optionalText(200),
     service: z.enum(["ot", "speech", "sped"]),
+    /** Services besides the main one. */
+    otherServices: z
+      .array(z.enum(["ot", "speech", "sped"]))
+      .max(2)
+      .default([]),
     enrolledOn: isoDate,
     primaryStaffId: z.string().default(""),
     backupStaffIds: z.array(z.string()).max(3).default([]),
@@ -29,6 +34,10 @@ export const patientFormSchema = z
   .refine((v) => !v.primaryStaffId || !v.backupStaffIds.includes(v.primaryStaffId), {
     message: "The primary therapist can't also be a backup.",
     path: ["backupStaffIds"],
+  })
+  .refine((v) => !v.otherServices.includes(v.service), {
+    message: "The main service is already included.",
+    path: ["otherServices"],
   })
   .refine((v) => !v.dateOfBirth || v.dateOfBirth <= v.enrolledOn, {
     message: "Date of birth must be before enrollment.",

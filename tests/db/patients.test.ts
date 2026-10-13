@@ -53,6 +53,28 @@ describe("patient CRUD", () => {
       expect(entry).toMatchObject({ action: "patient.create", actorUserId: "usr_desk" });
     }));
 
+  it("stores extra services alongside the main one and filters by any of them", () =>
+    inRollback(async (tx) => {
+      const created = await createPatient(tx, ACTORS.desk, {
+        branchId: "br_bangkal",
+        values: { ...newPatient, otherServices: ["ot", "sped"] },
+      });
+      expect(created).toMatchObject({ service: "speech", services: ["speech", "ot", "sped"] });
+      const list = await patientListPage(tx, ACTORS.desk, {
+        branchId: "br_bangkal",
+        service: "ot",
+        sort: "name",
+        pageSize: 100,
+      });
+      expect(list.rows.map((r) => r.id)).toContain(created.id);
+      await expect(
+        createPatient(tx, ACTORS.desk, {
+          branchId: "br_bangkal",
+          values: { ...newPatient, otherServices: ["speech"] },
+        }),
+      ).rejects.toThrow(/main service is already included/);
+    }));
+
   it("validates on the server too", () =>
     inRollback(async (tx) => {
       await expect(
