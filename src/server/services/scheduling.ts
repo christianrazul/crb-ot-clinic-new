@@ -265,13 +265,10 @@ export async function bookAppointment(
 ) {
   assertCan(actor, "appointment:book", { branchId: input.branchId });
   const v = bookingInput.parse(input.values);
-  // Therapists book only themselves, with any patient at the branch. Moving a
-  // session stays with the desk, as does every other status change.
-  if (actor.role === "therapist") {
-    if (v.staffId !== actor.staffId)
-      throw new ForbiddenError("You can only book sessions for yourself.");
-    if (v.rescheduleFromId) throw new ForbiddenError();
-  }
+  // Therapists book only themselves, with any patient at the branch, and may
+  // move only their own sessions (checked below once the original is loaded).
+  if (actor.role === "therapist" && v.staffId !== actor.staffId)
+    throw new ForbiddenError("You can only book sessions for yourself.");
   const branch = await branchOrThrow(db, input.branchId);
   // Only this branch's session types can be booked here.
   const [type] = await listSessionTypes(db, { branchId: input.branchId }).then((all) =>
@@ -303,6 +300,8 @@ export async function bookAppointment(
       .from(appointments)
       .where(eq(appointments.id, v.rescheduleFromId));
     if (!original || original.branchId !== input.branchId) throw new NotFoundError();
+    if (actor.role === "therapist" && original.staffId !== actor.staffId)
+      throw new ForbiddenError("You can only reschedule your own sessions.");
     if (!["scheduled", "checked_in"].includes(original.status)) {
       throw new ValidationError("Only upcoming sessions can be rescheduled.");
     }
@@ -470,7 +469,10 @@ export async function cancelSeriesFrom(
     .from(appointments)
     .where(eq(appointments.id, input.appointmentId));
   if (!target) throw new NotFoundError();
-  assertCan(actor, "appointment:status", { branchId: target.branchId });
+  assertCan(actor, "appointment:status", {
+    branchId: target.branchId,
+    ownedByActor: actor.role !== "therapist" || target.staffId === actor.staffId,
+  });
   if (!target.seriesId) throw new ValidationError("This session is not part of a weekly booking.");
   const date = toManilaIsoDate(target.startsAt);
   await db
