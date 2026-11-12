@@ -1,10 +1,25 @@
 "use client";
 
-import { NotebookPen, Pencil } from "lucide-react";
+import {
+  Ban,
+  CalendarClock,
+  Check,
+  CircleCheck,
+  LogIn,
+  type LucideIcon,
+  NotebookPen,
+  Pencil,
+  UserX,
+} from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
 import { addNoteAction, editNoteAction, getNoteContextAction } from "@/app/(app)/my-day/actions";
+import {
+  cancelSeriesAction,
+  getAppointmentAction,
+  setStatusAction,
+} from "@/app/(app)/schedule/actions";
 import { InfoGrid } from "@/components/app/detail-bits";
 import { PatientAvatar } from "@/components/app/patient-avatar";
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +35,20 @@ import {
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { APPOINTMENT_STATUS_META, type AppointmentStatus } from "@/lib/appointment-status";
 import { formatManila } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { NoteContext } from "@/server/services/notes";
 
+import { useDialogs } from "./dialog-host";
 import { useServerData } from "./use-server-data";
+
+const ACTIONS: { label: string; status: AppointmentStatus; icon: LucideIcon }[] = [
+  { label: "Check in", status: "checked_in", icon: LogIn },
+  { label: "Mark attended", status: "attended", icon: CircleCheck },
+  { label: "No-show", status: "no_show", icon: UserX },
+  { label: "Cancel", status: "cancelled", icon: Ban },
+];
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void; appointmentId: string };
 
@@ -35,7 +59,7 @@ export function SessionNoteDialog({ open, onOpenChange, appointmentId }: Props) 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         {loaded.data ? (
-          <NoteBody initial={loaded.data} />
+          <NoteBody initial={loaded.data} onOpenChange={onOpenChange} />
         ) : (
           <>
             <DialogHeader>
@@ -54,7 +78,15 @@ export function SessionNoteDialog({ open, onOpenChange, appointmentId }: Props) 
   );
 }
 
-function NoteBody({ initial }: { initial: NoteContext }) {
+function NoteBody({
+  initial,
+  onOpenChange,
+}: {
+  initial: NoteContext;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { openDialog } = useDialogs();
+  const [askCancel, setAskCancel] = React.useState(false);
   const [context, setContext] = React.useState(initial);
   const [draft, setDraft] = React.useState("");
   const [editing, setEditing] = React.useState<{ id: string; body: string } | null>(null);
@@ -63,6 +95,40 @@ function NoteBody({ initial }: { initial: NoteContext }) {
   const startsAt = new Date(context.startsAt);
   const canNote =
     context.canWrite && (context.status === "attended" || context.status === "checked_in");
+
+  const upcoming = context.status === "scheduled" || context.status === "checked_in";
+  const moved = context.status === "rescheduled";
+  const firstName = context.patient.name.split(" ")[0];
+
+  const setStatus = (status: AppointmentStatus) => {
+    if (status === "cancelled" && context.recurring) return setAskCancel(true);
+    startTransition(async () => {
+      const result = await setStatusAction(context.appointmentId, status);
+      if (!result.ok) return void toast.error(result.error ?? "That didn't work. Try again.");
+      setContext((c) => ({ ...c, status: result.data.status }));
+      setAskCancel(false);
+      toast.success(
+        `${context.patient.name}: ${APPOINTMENT_STATUS_META[status].label.toLowerCase()}`,
+      );
+    });
+  };
+
+  const cancelSeries = () =>
+    startTransition(async () => {
+      const result = await cancelSeriesAction(context.appointmentId);
+      if (!result.ok) return void toast.error(result.error ?? "That didn't work. Try again.");
+      onOpenChange(false);
+      toast.success(`${context.patient.name}: weekly booking ended`, {
+        description: "This and all future sessions are cancelled.",
+      });
+    });
+
+  const reschedule = () =>
+    startTransition(async () => {
+      const result = await getAppointmentAction(context.appointmentId);
+      if (!result.ok) return void toast.error(result.error ?? "That didn't work. Try again.");
+      openDialog({ kind: "booking", reschedule: result.data });
+    });
 
   const save = () =>
     startTransition(async () => {
@@ -118,6 +184,83 @@ function NoteBody({ initial }: { initial: NoteContext }) {
             {context.patient.goals || "No goals recorded yet."}
           </p>
         </div>
+        {context.canChangeStatus && !moved && (
+          <div className="grid gap-2">
+            <Label id="update-status-label">Update status</Label>
+            {askCancel ? (
+              <div className="rounded-lg border border-danger/30 bg-danger-soft/60 p-3.5">
+                <p className="text-sm text-muted-foreground">
+                  {firstName} is booked {context.patient.recurringSlot}. Cancel only this session,
+                  or this one and every session after it?
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={pending}
+                    onClick={() => {
+                      setAskCancel(false);
+                      startTransition(async () => {
+                        const result = await setStatusAction(context.appointmentId, "cancelled");
+                        if (!result.ok)
+                          return void toast.error(result.error ?? "That didn't work. Try again.");
+                        setContext((c) => ({ ...c, status: result.data.status }));
+                        toast.success(`${context.patient.name}: this session cancelled`);
+                      });
+                    }}
+                  >
+                    This session only
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={pending} onClick={cancelSeries}>
+                    This and all future sessions
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setAskCancel(false)}>
+                    Keep session
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                role="group"
+                aria-labelledby="update-status-label"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+              >
+                {ACTIONS.map(({ label, status, icon: Icon }) => {
+                  const current = context.status === status;
+                  return (
+                    <Button
+                      key={status}
+                      variant={current ? "default" : "outline"}
+                      aria-pressed={current}
+                      disabled={pending}
+                      className="h-auto flex-col gap-1.5 py-2.5 text-xs"
+                      onClick={() => setStatus(status)}
+                    >
+                      {current ? <Check /> : <Icon />}
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            )}
+            {upcoming && !askCancel && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="justify-self-start"
+                disabled={pending}
+                onClick={reschedule}
+              >
+                <CalendarClock /> Reschedule
+              </Button>
+            )}
+          </div>
+        )}
+        {moved && (
+          <p className="rounded-lg border border-dashed p-3.5 text-sm text-muted-foreground">
+            This session was moved to a make up session.
+          </p>
+        )}
         {canNote ? (
           <div className="grid gap-2">
             <Label htmlFor="note" className="flex items-center gap-2">
@@ -160,7 +303,7 @@ function NoteBody({ initial }: { initial: NoteContext }) {
         ) : (
           context.canWrite && (
             <p className="rounded-lg border border-dashed p-3.5 text-sm text-muted-foreground">
-              You can add a note once the desk checks {context.patient.name.split(" ")[0]} in.
+              You can add a note once {firstName} is checked in.
             </p>
           )
         )}

@@ -108,16 +108,42 @@ describe("booking", () => {
       });
     }));
 
-  it("therapists cannot book someone else or reschedule", () =>
+  it("therapists cannot book someone else", () =>
     inRollback(async (tx) => {
       await expect(bookAppointment(tx, ACTORS.therapist, book({}))).rejects.toBeInstanceOf(
         ForbiddenError,
       );
+    }));
+
+  it("therapists reschedule their own sessions but not another's", () =>
+    inRollback(async (tx) => {
+      const { appointmentIds } = await bookAppointment(
+        tx,
+        ACTORS.therapist,
+        book({
+          patientId: "pat_05",
+          staffId: "stf_delarosa",
+          sessionTypeId: "st_makeup",
+          date: "2026-08-25",
+          hour: 15,
+          rescheduleFromId: "apt_20260822_13_delarosa",
+        }),
+      );
+      const [original] = await tx
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, "apt_20260822_13_delarosa"));
+      expect(original).toMatchObject({ status: "rescheduled", rescheduledToId: appointmentIds[0] });
       await expect(
         bookAppointment(
           tx,
           ACTORS.therapist,
-          book({ staffId: "stf_delarosa", rescheduleFromId: "apt_20260822_11_delarosa" }),
+          book({
+            staffId: "stf_delarosa",
+            date: "2026-08-25",
+            hour: 16,
+            rescheduleFromId: "apt_20260822_10_tan",
+          }),
         ),
       ).rejects.toBeInstanceOf(ForbiddenError);
     }));

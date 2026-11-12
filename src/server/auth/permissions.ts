@@ -35,7 +35,8 @@ const GRANTS: Record<Action, Role[]> = {
   "schedule:read": ["superadmin", "secretary", "therapist"],
   /** Therapists book sessions too, but only with themselves as the therapist. */
   "appointment:book": ["superadmin", "secretary", "therapist"],
-  "appointment:status": ["superadmin", "secretary"],
+  /** Check in, attend, no-show, cancel; therapists only on their own sessions. */
+  "appointment:status": ["superadmin", "secretary", "therapist"],
   /** Everyone at a branch sees all of its patients and their notes, therapists included. */
   "patient:read": ["superadmin", "secretary", "therapist"],
   /** Set patients inactive, remove them, book them, record their money. */
@@ -62,7 +63,12 @@ const GRANTS: Record<Action, Role[]> = {
 };
 
 /** Actions a therapist may only take on their own patients and sessions. */
-const OWN_ONLY_FOR_THERAPISTS = new Set<Action>(["schedule:read", "note:write", "patient:edit"]);
+const OWN_ONLY_FOR_THERAPISTS = new Set<Action>([
+  "schedule:read",
+  "note:write",
+  "patient:edit",
+  "appointment:status",
+]);
 
 export type Resource = {
   /** The branch the record belongs to. The actor must be a member. */

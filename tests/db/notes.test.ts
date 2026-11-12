@@ -42,7 +42,7 @@ describe("session notes", () => {
       ).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
         addNote(tx, ACTORS.therapist, { appointmentId: "apt_20260822_11_delarosa", body: "x" }),
-      ).rejects.toThrow(/check the patient in first/);
+      ).rejects.toThrow(/check the patient in first/i);
       await expect(
         addNote(tx, ACTORS.therapist, { appointmentId: "apt_20260822_09_delarosa", body: "   " }),
       ).rejects.toThrow(/Write the note/);

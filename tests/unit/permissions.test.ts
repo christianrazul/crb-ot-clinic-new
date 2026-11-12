@@ -32,7 +32,7 @@ describe("can", () => {
     ).toBe(false);
   });
 
-  it("lets therapists read every patient but edit only their own, and keeps them from money and status changes", () => {
+  it("lets therapists read every patient but edit only their own, change only their own sessions' status, and keeps them from money", () => {
     expect(
       can(ACTORS.therapist, "patient:read", { branchId: "br_bangkal", ownedByActor: false }),
     ).toBe(true);
@@ -40,11 +40,16 @@ describe("can", () => {
       can(ACTORS.therapist, "patient:edit", { branchId: "br_bangkal", ownedByActor: false }),
     ).toBe(false);
     expect(can(ACTORS.therapist, "note:write", { ownedByActor: true })).toBe(true);
+    expect(
+      can(ACTORS.therapist, "appointment:status", { branchId: "br_bangkal", ownedByActor: true }),
+    ).toBe(true);
+    expect(
+      can(ACTORS.therapist, "appointment:status", { branchId: "br_bangkal", ownedByActor: false }),
+    ).toBe(false);
     for (const action of [
       "billing:read",
       "credit:read",
       "payment:collect",
-      "appointment:status",
       "payroll:read",
     ] as const) {
       expect(can(ACTORS.therapist, action, { branchId: "br_bangkal" })).toBe(false);

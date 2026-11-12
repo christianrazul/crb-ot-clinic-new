@@ -10,7 +10,7 @@ import { fromManilaLocal, toManilaIsoDate } from "@/lib/dates";
 import { payrollLine } from "@/lib/payroll";
 import type { ServiceKey } from "@/lib/services";
 import type { Actor } from "@/server/auth/actor";
-import { assertCan, ForbiddenError } from "@/server/auth/permissions";
+import { assertCan, can, ForbiddenError } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
@@ -130,6 +130,12 @@ export async function getNoteContext(db: DbExecutor, actor: Actor, appointmentId
     attendancePct: toDate?.held ? Math.round(((toDate.attended ?? 0) / toDate.held) * 100) : null,
     notes,
     canWrite: actor.role === "therapist" && own,
+    /** Whether this session can still be checked in, marked or cancelled by the viewer. */
+    canChangeStatus: can(actor, "appointment:status", {
+      branchId: row.appointment.branchId,
+      ownedByActor: own,
+    }),
+    recurring: Boolean(row.appointment.seriesId),
     myStaffId: actor.staffId,
   };
 }
@@ -147,9 +153,7 @@ export async function addNote(
   assertCan(actor, "note:write", { branchId: row.appointment.branchId, ownedByActor: own });
   if (!own) throw new ForbiddenError("You can only write notes for your own sessions.");
   if (!["checked_in", "attended"].includes(row.appointment.status)) {
-    throw new ValidationError(
-      "Notes are for sessions that happened. Ask the desk to check the patient in first.",
-    );
+    throw new ValidationError("Notes are for sessions that happened. Check the patient in first.");
   }
   const [note] = await db
     .insert(sessionNotes)

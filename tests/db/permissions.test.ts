@@ -39,19 +39,25 @@ describe("a therapist", () => {
     await expect(getCreditLedger(testDb(), me, "pat_01")).rejects.toBeInstanceOf(ForbiddenError);
   });
 
-  it("cannot change an appointment's status, even their own", () =>
+  it("changes the status of their own sessions only", () =>
     inRollback(async (tx) => {
+      const after = await setAppointmentStatus(tx, me, {
+        appointmentId: "apt_20260822_11_delarosa",
+        status: "attended",
+      });
+      expect(after).toMatchObject({ status: "attended", statusChangedByUserId: me.userId });
+      // Tan's session is not theirs.
       await expect(
         setAppointmentStatus(tx, me, {
-          appointmentId: "apt_20260822_11_delarosa",
+          appointmentId: "apt_20260822_10_tan",
           status: "attended",
         }),
       ).rejects.toBeInstanceOf(ForbiddenError);
       const [row] = await tx
         .select()
         .from(appointments)
-        .where(eq(appointments.id, "apt_20260822_11_delarosa"));
-      expect(row!.status).toBe("scheduled");
+        .where(eq(appointments.id, "apt_20260822_10_tan"));
+      expect(row!.status).not.toBe("attended");
     }));
 
   it("cannot create accounts", () =>

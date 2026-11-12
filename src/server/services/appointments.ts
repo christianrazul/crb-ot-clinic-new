@@ -20,14 +20,17 @@ export const statusChangeInput = z.object({
 
 /**
  * Check in, mark attended, no-show or cancel (one session). Owner and front
- * desk only. Marking attended snapshots the session's fee and the
+ * desk, and therapists on their own sessions. Marking attended snapshots the session's fee and the
  * therapist's share for payroll, so later changes never rewrite history.
  */
 export async function setAppointmentStatus(db: DbExecutor, actor: Actor, raw: unknown) {
   const input = statusChangeInput.parse(raw);
   const before = await getAppointment(db, input.appointmentId);
   if (!before) throw new NotFoundError();
-  assertCan(actor, "appointment:status", { branchId: before.branchId });
+  assertCan(actor, "appointment:status", {
+    branchId: before.branchId,
+    ownedByActor: actor.role !== "therapist" || before.staffId === actor.staffId,
+  });
   if (before.status === "rescheduled") {
     throw new ValidationError(
       "This session was moved to a make-up session. Change that one instead.",
