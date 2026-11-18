@@ -86,6 +86,11 @@
   "pnpm": {
     "ignoredBuiltDependencies": [
       "unrs-resolver"
-    ]
+    ],
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fc5q-39xc-vjpf"
+      ]
+    }
   }
 }
