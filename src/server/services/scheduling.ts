@@ -255,8 +255,8 @@ function occurrences(date: string, recurring: boolean) {
 
 /**
  * Books one session or a weekly series. Checks every rule and explains the
- * first one broken; the database's exclusion constraints back up the overlap
- * checks if two people book the same slot at the same moment.
+ * first one broken; the database's exclusion constraint backs up the patient
+ * overlap check if two people book the same slot at the same moment.
  */
 export async function bookAppointment(
   db: DbExecutor,
@@ -331,29 +331,26 @@ export async function bookAppointment(
         `${branch.name} is closed on ${format(parseISO(date), "EEEE")}s. Pick another day.`,
       );
     }
-    const clashes = await db
-      .select({ staffId: appointments.staffId, patientId: appointments.patientId })
-      .from(appointments)
-      .where(
-        and(
-          eq(appointments.startsAt, startsAt),
-          inArray(appointments.status, [...HOLDS_SLOT]),
-          or(
-            eq(appointments.staffId, v.staffId),
-            patientId ? eq(appointments.patientId, patientId) : undefined,
+    // A therapist may take several patients in one hour (a make up session
+    // with no other free slot, or a group session); only the patient is
+    // blocked from being in two places at once.
+    if (patientId) {
+      const [clash] = await db
+        .select({ id: appointments.id })
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.startsAt, startsAt),
+            inArray(appointments.status, [...HOLDS_SLOT]),
+            eq(appointments.patientId, patientId),
+            v.rescheduleFromId ? ne(appointments.id, v.rescheduleFromId) : undefined,
           ),
-          v.rescheduleFromId ? ne(appointments.id, v.rescheduleFromId) : undefined,
-        ),
-      );
-    if (clashes.some((c) => c.staffId === v.staffId)) {
-      throw new ValidationError(
-        `${member.surname} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}. Pick another time or therapist.`,
-      );
+        );
+      if (clash)
+        throw new ValidationError(
+          `${patientName} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}.`,
+        );
     }
-    if (clashes.length)
-      throw new ValidationError(
-        `${patientName} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}.`,
-      );
   }
 
   if (!patientId) {
@@ -599,10 +596,7 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
           and(
             eq(appointments.startsAt, startsAt),
             notInArray(appointments.status, ["cancelled", "rescheduled"]),
-            or(
-              eq(appointments.staffId, series.staffId),
-              eq(appointments.patientId, series.patientId),
-            ),
+            eq(appointments.patientId, series.patientId),
           ),
         );
       if (taken.length) skipped.push({ seriesId: series.id, date });

@@ -52,9 +52,11 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
     (((now.getTime() - midnight.getTime()) / 60_000 - day.opensAtHour * 60) / 60) * ROW_HEIGHT;
   const showNow = isToday && nowTop >= 0 && nowTop <= day.hours.length * ROW_HEIGHT;
 
-  const cellFor = (staffId: string, hour: number): ScheduleAppointment | undefined => {
+  /** Every session a therapist has in an hour: several when they share it. */
+  const cellFor = (staffId: string, hour: number): ScheduleAppointment[] => {
     const here = day.appointments.filter((a) => a.staffId === staffId && a.hour === hour);
-    return here.find((a) => HOLDS_SLOT.has(a.status)) ?? here.at(-1);
+    const holding = here.filter((a) => HOLDS_SLOT.has(a.status));
+    return holding.length ? holding : here.slice(-1);
   };
 
   return (
@@ -111,8 +113,8 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
           {day.columns.map((member) => (
             <div key={member.id} className="relative border-r last:border-r-0">
               {day.hours.map((hour) => {
-                const appointment = cellFor(member.id, hour);
-                if (!appointment) {
+                const cell = cellFor(member.id, hour);
+                if (!cell.length) {
                   return (
                     <div key={hour} className="group h-[72px] border-b p-1 last:border-b-0">
                       {day.canBook && (
@@ -132,36 +134,54 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
                     </div>
                   );
                 }
-                const struck =
-                  appointment.status === "cancelled" || appointment.status === "rescheduled";
+                const shared = cell.length > 1;
                 return (
-                  <div key={hour} className="h-[72px] border-b p-1 last:border-b-0">
-                    <button
-                      onClick={() => openDialog({ kind: "session", appointmentId: appointment.id })}
-                      className={cn(
-                        "flex size-full flex-col items-start justify-between rounded-md border-l-[3px] px-2.5 py-1.5 text-left transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.98] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                        SERVICE_BLOCK[appointment.service],
-                        struck && "opacity-55",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "w-full truncate text-[13px] font-semibold",
-                          struck && "line-through",
-                        )}
-                      >
-                        {appointment.patientName}
-                      </span>
-                      <span className="flex w-full items-center gap-1.5">
-                        <span className="text-xs">{appointment.sessionTypeName}</span>
-                        {appointment.status !== "scheduled" && (
-                          <StatusBadge
-                            status={appointment.status}
-                            className="ml-auto px-1.5 py-0 text-[10.5px]"
-                          />
-                        )}
-                      </span>
-                    </button>
+                  <div
+                    key={hour}
+                    className={cn(
+                      "flex h-[72px] flex-col border-b p-1 last:border-b-0",
+                      shared && "gap-0.5",
+                    )}
+                  >
+                    {cell.map((appointment) => {
+                      const struck =
+                        appointment.status === "cancelled" || appointment.status === "rescheduled";
+                      return (
+                        <button
+                          key={appointment.id}
+                          onClick={() =>
+                            openDialog({ kind: "session", appointmentId: appointment.id })
+                          }
+                          className={cn(
+                            "flex min-h-0 flex-1 flex-col items-start rounded-md border-l-[3px] text-left transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.98] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                            shared ? "justify-center px-2 py-0" : "justify-between px-2.5 py-1.5",
+                            SERVICE_BLOCK[appointment.service],
+                            struck && "opacity-55",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "w-full truncate font-semibold",
+                              shared ? "text-xs" : "text-[13px]",
+                              struck && "line-through",
+                            )}
+                          >
+                            {appointment.patientName}
+                          </span>
+                          {!shared && (
+                            <span className="flex w-full items-center gap-1.5">
+                              <span className="text-xs">{appointment.sessionTypeName}</span>
+                              {appointment.status !== "scheduled" && (
+                                <StatusBadge
+                                  status={appointment.status}
+                                  className="ml-auto px-1.5 py-0 text-[10.5px]"
+                                />
+                              )}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 );
               })}

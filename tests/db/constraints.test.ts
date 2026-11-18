@@ -19,16 +19,11 @@ const appointment = (patch: Partial<typeof t.appointments.$inferInsert> = {}) =>
   ...patch,
 });
 
-describe("double booking is impossible", () => {
-  it("rejects two overlapping appointments for one staff member", () =>
+describe("a patient cannot be double-booked", () => {
+  it("lets one staff member hold overlapping appointments with different patients", () =>
     inRollback(async (tx) => {
       await tx.insert(t.appointments).values(appointment());
-      // Different patient, same therapist, same hour.
-      expect(
-        await failureCode(tx, (s) =>
-          s.insert(t.appointments).values(appointment({ patientId: "pat_13" })),
-        ),
-      ).toBe(PG.exclusionViolation);
+      await tx.insert(t.appointments).values(appointment({ patientId: "pat_13" }));
     }));
 
   it("rejects two overlapping appointments for one patient", () =>
@@ -73,13 +68,19 @@ describe("double booking is impossible", () => {
       await tx.insert(t.appointments).values(appointment({ patientId: "pat_13" }));
     }));
 
-  it("an existing seeded slot cannot be double-booked", () =>
+  it("an existing seeded slot cannot be double-booked for its patient", () =>
     inRollback(async (tx) => {
-      // Tan has Gab Torres on Saturday, Aug 22 at 10:00.
+      // Gab Torres is with Tan on Saturday, Aug 22 at 10:00.
+      const [seeded] = await tx
+        .select()
+        .from(t.appointments)
+        .where(eq(t.appointments.startsAt, at("2026-08-22", "10:00")));
       expect(
         await failureCode(tx, (s) =>
           s.insert(t.appointments).values(
             appointment({
+              patientId: seeded!.patientId,
+              staffId: "stf_delarosa",
               startsAt: at("2026-08-22", "10:00"),
               endsAt: at("2026-08-22", "11:00"),
             }),

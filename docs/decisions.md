@@ -408,13 +408,13 @@ Changing opening days or hours never moves or cancels existing bookings. The boo
 - the patient is active and at this branch
 - the date isn't in the past
 - every occurrence falls on an open day
-- no occurrence clashes with the therapist's or the patient's other sessions
+- no occurrence clashes with the patient's other sessions (a therapist may hold several patients in one hour, see D-124)
 
 If two people book the same slot at the same moment, both pass the checks, and the exclusion constraint stops the second insert. `runAction` turns that into "That time is already taken".
 
 ### D-069: Series and the daily job
 
-A recurring booking creates an `appointment_series` row (one weekday at one time) and its first 8 weeks of appointments. `materializeSeries()` extends every open series to 8 weeks past today. It skips series whose session type was removed or whose patient is inactive or removed. Slots already taken are skipped and counted, never double-booked. Running it twice in a day does nothing.
+A recurring booking creates an `appointment_series` row (one weekday at one time) and its first 8 weeks of appointments. `materializeSeries()` extends every open series to 8 weeks past today. It skips series whose session type was removed or whose patient is inactive or removed. Slots where the patient already has a session are skipped and counted, never double-booked. Running it twice in a day does nothing.
 
 It runs from `POST /api/jobs/materialize` with `Authorization: Bearer $CRON_SECRET` (compared in constant time; without `CRON_SECRET` set, the endpoint refuses everything), or from `pnpm jobs:materialize`. Cron setup is in Milestone 13.
 
@@ -722,3 +722,7 @@ Permissions: `appointment:book` now includes therapists (themselves only, no res
 What stays the same: a therapist edits the details only of patients they treat (primary or backup), and the edit button only shows on those. They write and edit notes only for their own sessions. Money stays hidden: no balances, credit or payments. The schedule screen still shows only their own column.
 
 This replaces the parts of D-120 and D-122 that hid other therapists' patients: someone else's patient no longer looks missing, and booking search shows guardians for everyone. Permissions: `patient:read` and `note:read` are no longer own-only for therapists; `patient:edit` still is.
+
+### D-124: A therapist can take several patients in one hour
+
+A therapist may have more than one patient in the same hour: a make up session when no other slot is free, or a real group session. Booking and the daily job no longer treat the therapist's own sessions as a clash, and `drizzle/0007_shared_therapist_hours.sql` drops `appointments_no_staff_overlap`. A patient still can't be in two sessions at once, so `appointments_no_patient_overlap` and its message stay. The day view stacks a shared hour's sessions in the therapist's cell.

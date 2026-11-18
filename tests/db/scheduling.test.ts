@@ -47,14 +47,23 @@ describe("booking", () => {
       });
     }));
 
-  it("rejects double booking with a clear message", () =>
+  it("lets a therapist take another patient in an hour they already have one", () =>
     inRollback(async (tx) => {
-      // Tan already has Gab Torres today at 10:00.
-      await expect(
-        bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-22", hour: 10 })),
-      ).rejects.toThrow(
-        "Tan already has a session at 10:00 AM on Sat, Aug 22. Pick another time or therapist.",
+      // Tan already has Gab Torres today at 10:00; a second patient can join.
+      const { appointmentIds } = await bookAppointment(
+        tx,
+        ACTORS.desk,
+        book({ patientId: "pat_13", date: "2026-08-22", hour: 10 }),
       );
+      const [row] = await tx
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, appointmentIds[0]!));
+      expect(row).toMatchObject({ patientId: "pat_13", staffId: "stf_tan" });
+    }));
+
+  it("still rejects a patient who is already booked at that hour", () =>
+    inRollback(async (tx) => {
       // Liam Santos is with Dela Rosa today at 9:00.
       await expect(
         bookAppointment(
