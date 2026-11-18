@@ -738,3 +738,7 @@ A session type is either 30 minutes or 1 hour (`session_types.duration_minutes`,
 Sessions start on the hour or the half hour. `appointments_on_the_hour` became `appointments_on_the_half_hour`, and `appointment_series.start_minute` (0 or 30) sits beside `start_hour`. Opening hours are still whole hours. A session must end by closing time, so a 30-minute session can start at 4:30 PM when the clinic closes at 5, and a 1-hour session can't.
 
 The patient clash check, the series job and the patient exclusion constraint all compare time ranges, not start times, so a 30-minute session at 9:30 clashes with an hour at 9:00 for the same patient. The booking dialog lists only the start times that fit the chosen type, and moves the time back if switching to a longer type no longer fits. The day view places each session by start minute and length; overlapping sessions for one therapist sit side by side.
+
+### D-127: One audit advisory is ignored until a fix ships
+
+On 2026-11-18 the CI dependency audit started failing on GHSA-fc5q-39xc-vjpf, a ReDoS in `picomatch` (all versions up to 4.0.7, no patched release). It reaches the app only through `better-auth` → `vitest` → `picomatch`, a test-runner dependency, not code the clinic's own paths call. Because the audit blocks the image build and deploy, `package.json` lists it under `pnpm.auditConfig.ignoreGhsas`. Remove that entry as soon as a patched `picomatch` exists and the lockfile can take it.
