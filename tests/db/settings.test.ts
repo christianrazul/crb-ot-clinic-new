@@ -14,6 +14,7 @@ import { setAppointmentStatus } from "@/server/services/appointments";
 import {
   createBranch,
   createSessionType,
+  updateSessionTypeDuration,
   createStaff,
   removeSessionType,
   staffWithLoad,
@@ -120,6 +121,30 @@ describe("session types", () => {
           values: { name: "OT group session", ratePesos: 450 },
         }),
       ).toBe(id);
+    }));
+
+  it("sets and changes a type's time interval", () =>
+    inRollback(async (tx) => {
+      const id = await createSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        values: { name: "Quick check-in", ratePesos: 350, durationMinutes: 30 },
+      });
+      const [created] = await tx.select().from(sessionTypes).where(eq(sessionTypes.id, id));
+      expect(created!.durationMinutes).toBe(30);
+      await updateSessionTypeDuration(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id,
+        durationMinutes: 60,
+      });
+      const [changed] = await tx.select().from(sessionTypes).where(eq(sessionTypes.id, id));
+      expect(changed!.durationMinutes).toBe(60);
+      await expect(
+        updateSessionTypeDuration(tx, ACTORS.owner, {
+          branchId: "br_bangkal",
+          id,
+          durationMinutes: 45,
+        }),
+      ).rejects.toThrow();
     }));
 });
 

@@ -1,10 +1,16 @@
 import "server-only";
 
 import { addDays, addWeeks, format, parseISO } from "date-fns";
-import { and, asc, eq, gte, inArray, isNull, lt, ne, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or } from "drizzle-orm";
 
-import { bookableHours, eligibleStaff, hourLabel } from "@/lib/booking";
-import { fromManilaLocal, manilaHour, manilaWeekday, toManilaIsoDate } from "@/lib/dates";
+import { bookableHours, eligibleStaff, minutesLabel, toMinutes } from "@/lib/booking";
+import {
+  fromManilaLocal,
+  manilaHour,
+  manilaMinute,
+  manilaWeekday,
+  toManilaIsoDate,
+} from "@/lib/dates";
 import type { ServiceKey } from "@/lib/services";
 import { bookingInput } from "@/lib/validation/booking";
 import type { Actor } from "@/server/auth/actor";
@@ -32,9 +38,9 @@ import { NotFoundError, ValidationError } from "./errors";
 /** Recurring bookings are materialized this far ahead; the daily job keeps it rolling. */
 export const HORIZON_WEEKS = 8;
 const HOLDS_SLOT = ["scheduled", "checked_in", "attended", "no_show"] as const;
-const ONE_HOUR = 60 * 60 * 1000;
-const slotStart = (date: string, hour: number) =>
-  fromManilaLocal(date, `${String(hour).padStart(2, "0")}:00`);
+const ONE_MINUTE = 60 * 1000;
+const slotStart = (date: string, hour: number, minute = 0) =>
+  fromManilaLocal(date, `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
 const shortDate = (date: string) => format(parseISO(date), "EEE, MMM d");
 
 /** The colour of a session: the staff member's rate class, so OT Aide shows pink. */
@@ -61,6 +67,7 @@ async function appointmentsInRange(
     .select({
       id: appointments.id,
       startsAt: appointments.startsAt,
+      endsAt: appointments.endsAt,
       status: appointments.status,
       staffId: appointments.staffId,
       patientId: appointments.patientId,
@@ -94,6 +101,8 @@ async function appointmentsInRange(
         startsAt: r.startsAt.toISOString(),
         date: toManilaIsoDate(r.startsAt),
         hour: manilaHour(r.startsAt),
+        minute: manilaMinute(r.startsAt),
+        durationMinutes: Math.round((r.endsAt.getTime() - r.startsAt.getTime()) / ONE_MINUTE),
         status: r.status,
         staffId: r.staffId,
         patientId: r.patientId,
@@ -239,6 +248,7 @@ export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: 
         name: t.name,
         service: t.service,
         rateCentavos: t.rateCentavos,
+        durationMinutes: t.durationMinutes,
         allowedRateClassIds: t.allowedRateClassIds,
       })),
     staff: staffRows,
@@ -255,8 +265,8 @@ function occurrences(date: string, recurring: boolean) {
 
 /**
  * Books one session or a weekly series. Checks every rule and explains the
- * first one broken; the database's exclusion constraints back up the overlap
- * checks if two people book the same slot at the same moment.
+ * first one broken; the database's exclusion constraint backs up the patient
+ * overlap check if two people book the same slot at the same moment.
  */
 export async function bookAppointment(
   db: DbExecutor,
@@ -287,9 +297,10 @@ export async function bookAppointment(
       `${member.displayName} (${rc?.name ?? "this role"}) can't run ${type.name.toLowerCase()}s. Pick another therapist.`,
     );
   }
-  if (v.hour < branch.opensAtHour || v.hour + 1 > branch.closesAtHour) {
+  const start = toMinutes(v.hour, v.minute);
+  if (start < branch.opensAtHour * 60 || start + type.durationMinutes > branch.closesAtHour * 60) {
     throw new ValidationError(
-      `Sessions at ${branch.name} run from ${hourLabel(branch.opensAtHour)} to ${hourLabel(branch.closesAtHour - 1)}.`,
+      `${type.name}s at ${branch.name} run from ${minutesLabel(branch.opensAtHour * 60)} to ${minutesLabel(branch.closesAtHour * 60 - type.durationMinutes)}.`,
     );
   }
 
@@ -323,37 +334,44 @@ export async function bookAppointment(
 
   const dates = occurrences(v.date, v.recurring && !v.rescheduleFromId);
   const today = clinicToday();
-  if (dates[0]! < today) throw new ValidationError("That date has passed. Pick today or later.");
+  if (dates[0]! < today) {
+    // The owner and the desk backlog past sessions, one at a time; therapists book ahead.
+    if (actor.role === "therapist")
+      throw new ValidationError("That date has passed. Pick today or later.");
+    if (v.recurring && !v.rescheduleFromId)
+      throw new ValidationError(
+        "Weekly repeats start today or later. Book past sessions one at a time.",
+      );
+  }
   for (const date of dates) {
-    const startsAt = slotStart(date, v.hour);
+    const startsAt = slotStart(date, v.hour, v.minute);
+    const endsAt = new Date(startsAt.getTime() + type.durationMinutes * ONE_MINUTE);
     if (!branch.openDays.includes(manilaWeekday(startsAt))) {
       throw new ValidationError(
         `${branch.name} is closed on ${format(parseISO(date), "EEEE")}s. Pick another day.`,
       );
     }
-    const clashes = await db
-      .select({ staffId: appointments.staffId, patientId: appointments.patientId })
-      .from(appointments)
-      .where(
-        and(
-          eq(appointments.startsAt, startsAt),
-          inArray(appointments.status, [...HOLDS_SLOT]),
-          or(
-            eq(appointments.staffId, v.staffId),
-            patientId ? eq(appointments.patientId, patientId) : undefined,
+    // A therapist may take several patients in one hour (a make up session
+    // with no other free slot, or a group session); only the patient is
+    // blocked from being in two places at once.
+    if (patientId) {
+      const [clash] = await db
+        .select({ id: appointments.id })
+        .from(appointments)
+        .where(
+          and(
+            lt(appointments.startsAt, endsAt),
+            gt(appointments.endsAt, startsAt),
+            inArray(appointments.status, [...HOLDS_SLOT]),
+            eq(appointments.patientId, patientId),
+            v.rescheduleFromId ? ne(appointments.id, v.rescheduleFromId) : undefined,
           ),
-          v.rescheduleFromId ? ne(appointments.id, v.rescheduleFromId) : undefined,
-        ),
-      );
-    if (clashes.some((c) => c.staffId === v.staffId)) {
-      throw new ValidationError(
-        `${member.surname} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}. Pick another time or therapist.`,
-      );
+        );
+      if (clash)
+        throw new ValidationError(
+          `${patientName} already has a session at ${minutesLabel(start)} on ${shortDate(date)}.`,
+        );
     }
-    if (clashes.length)
-      throw new ValidationError(
-        `${patientName} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}.`,
-      );
   }
 
   if (!patientId) {
@@ -392,8 +410,9 @@ export async function bookAppointment(
         patientId,
         staffId: v.staffId,
         sessionTypeId: type.id,
-        weekday: manilaWeekday(slotStart(v.date, v.hour)),
+        weekday: manilaWeekday(slotStart(v.date, v.hour, v.minute)),
         startHour: v.hour,
+        startMinute: v.minute,
         startsOn: v.date,
         materializedUntil: dates.at(-1)!,
         createdByUserId: actor.userId,
@@ -419,7 +438,7 @@ export async function bookAppointment(
     .insert(appointments)
     .values(
       dates.map((date) => {
-        const startsAt = slotStart(date, v.hour);
+        const startsAt = slotStart(date, v.hour, v.minute);
         return {
           branchId: input.branchId,
           patientId: patientId!,
@@ -427,7 +446,7 @@ export async function bookAppointment(
           sessionTypeId: type.id,
           seriesId,
           startsAt,
-          endsAt: new Date(startsAt.getTime() + ONE_HOUR),
+          endsAt: new Date(startsAt.getTime() + type.durationMinutes * ONE_MINUTE),
           // Snapshot of the rate when booked.
           feeCentavos: type.rateCentavos,
           isMakeUp: Boolean(v.rescheduleFromId),
@@ -571,6 +590,7 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
     .select({
       series: appointmentSeries,
       rateCentavos: sessionTypes.rateCentavos,
+      durationMinutes: sessionTypes.durationMinutes,
       active: sessionTypes.active,
       patientStatus: patients.status,
       patientDeleted: patients.deletedAt,
@@ -586,23 +606,29 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
     );
   let created = 0;
   const skipped: { seriesId: string; date: string }[] = [];
-  for (const { series, rateCentavos, active, patientStatus, patientDeleted } of open) {
+  for (const {
+    series,
+    rateCentavos,
+    durationMinutes,
+    active,
+    patientStatus,
+    patientDeleted,
+  } of open) {
     if (!active || patientStatus !== "active" || patientDeleted) continue;
     let date = format(addWeeks(parseISO(series.materializedUntil), 1), "yyyy-MM-dd");
     const last = series.endsOn && series.endsOn < horizon ? series.endsOn : horizon;
     while (date <= last) {
-      const startsAt = slotStart(date, series.startHour);
+      const startsAt = slotStart(date, series.startHour, series.startMinute);
+      const endsAt = new Date(startsAt.getTime() + durationMinutes * ONE_MINUTE);
       const taken = await db
         .select({ id: appointments.id })
         .from(appointments)
         .where(
           and(
-            eq(appointments.startsAt, startsAt),
+            lt(appointments.startsAt, endsAt),
+            gt(appointments.endsAt, startsAt),
             notInArray(appointments.status, ["cancelled", "rescheduled"]),
-            or(
-              eq(appointments.staffId, series.staffId),
-              eq(appointments.patientId, series.patientId),
-            ),
+            eq(appointments.patientId, series.patientId),
           ),
         );
       if (taken.length) skipped.push({ seriesId: series.id, date });
@@ -614,7 +640,7 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
           sessionTypeId: series.sessionTypeId,
           seriesId: series.id,
           startsAt,
-          endsAt: new Date(startsAt.getTime() + ONE_HOUR),
+          endsAt,
           feeCentavos: rateCentavos,
         });
         created += 1;

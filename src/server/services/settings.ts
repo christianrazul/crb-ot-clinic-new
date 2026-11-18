@@ -202,10 +202,14 @@ export async function createSessionType(
   if (existing?.active)
     throw new ValidationError(`There is already a session type called ${existing.name}.`);
   if (existing) {
-    // Re-adding a removed type brings it back with the new rate.
+    // Re-adding a removed type brings it back with the new rate and length.
     await db
       .update(sessionTypes)
-      .set({ active: true, rateCentavos: values.ratePesos * 100 })
+      .set({
+        active: true,
+        rateCentavos: values.ratePesos * 100,
+        durationMinutes: values.durationMinutes,
+      })
       .where(eq(sessionTypes.id, existing.id));
     await writeAudit(db, {
       actorUserId: actor.userId,
@@ -227,6 +231,7 @@ export async function createSessionType(
       branchId: input.branchId,
       name: values.name,
       rateCentavos: values.ratePesos * 100,
+      durationMinutes: values.durationMinutes,
       anyRateClass: true,
       sortOrder: max + 1,
     })
@@ -261,6 +266,26 @@ export async function updateSessionTypeRate(
     entityId: input.id,
     before: { branchId: input.branchId, rateCentavos: before.rateCentavos },
     after: { branchId: input.branchId, rateCentavos: ratePesos * 100 },
+    ip: actor.ip,
+  });
+}
+
+/** A new length for future bookings. Booked sessions keep the time they were booked for. */
+export async function updateSessionTypeDuration(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; id: string; durationMinutes: unknown },
+) {
+  const durationMinutes = sessionTypeInput.shape.durationMinutes.parse(input.durationMinutes);
+  const before = await sessionTypeIn(db, actor, input.id, input.branchId);
+  await db.update(sessionTypes).set({ durationMinutes }).where(eq(sessionTypes.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.update",
+    entity: "session_type",
+    entityId: input.id,
+    before: { branchId: input.branchId, durationMinutes: before.durationMinutes },
+    after: { branchId: input.branchId, durationMinutes },
     ip: actor.ip,
   });
 }
@@ -451,6 +476,7 @@ async function copyBranchSetup(db: DbExecutor, branchId: string) {
         name: type.name,
         service: type.service,
         rateCentavos: type.rateCentavos,
+        durationMinutes: type.durationMinutes,
         anyRateClass: type.anyRateClass,
         sortOrder: type.sortOrder,
       })

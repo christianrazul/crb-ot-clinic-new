@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { ageOn } from "@/lib/age";
-import { bookableHours, eligibleStaff, hourGutterLabel, hourLabel } from "@/lib/booking";
+import {
+  bookableHours,
+  bookableStarts,
+  durationLabel,
+  eligibleStaff,
+  hourGutterLabel,
+  hourLabel,
+  minutesLabel,
+} from "@/lib/booking";
 import { creditBalance, withRunningBalance } from "@/lib/credit";
 import { payrollLine, sumPayroll } from "@/lib/payroll";
 
@@ -68,6 +76,15 @@ describe("booking", () => {
 
   it("sessions start on the hour and end by closing time", () => {
     expect(bookableHours(9, 17)).toEqual([9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it("offers start times on the hour and half hour that fit the session", () => {
+    expect(bookableStarts(9, 11, 60)).toEqual([540, 570, 600]);
+    expect(bookableStarts(9, 11, 30)).toEqual([540, 570, 600, 630]);
+    expect(minutesLabel(570)).toBe("9:30 AM");
+    expect(minutesLabel(990)).toBe("4:30 PM");
+    expect(durationLabel(30)).toBe("30 min");
+    expect(durationLabel(60)).toBe("1 hour");
   });
 
   it("labels hours", () => {

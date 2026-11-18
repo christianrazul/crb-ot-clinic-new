@@ -9,6 +9,8 @@ export const bookingInput = z
     sessionTypeId: z.string().min(1, "Choose a session type."),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date."),
     hour: z.number().int().min(0).max(23),
+    /** Sessions start on the hour or the half hour. */
+    minute: z.union([z.literal(0), z.literal(30)]).default(0),
     recurring: z.boolean().default(false),
     /** Rescheduling: the original becomes "rescheduled" and links to the new make-up session. */
     rescheduleFromId: z.string().min(1).optional(),

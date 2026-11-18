@@ -12,6 +12,13 @@ import { Card } from "@/components/ui/card";
 import { Input, InputGroup } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -20,11 +27,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { durationLabel, SESSION_DURATIONS } from "@/lib/booking";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
 
 import {
   addSessionTypeAction,
   removeSessionTypeAction,
+  updateSessionTypeDurationAction,
   updateSessionTypeRateAction,
 } from "../actions";
 import { AddForm, digitsOnly } from "./add-form";
@@ -65,10 +74,47 @@ function RateField({
   );
 }
 
+/** Length picker: half an hour or one hour. */
+function DurationSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+  label,
+  className,
+}: {
+  id?: string;
+  value: number;
+  onChange: (minutes: number) => void;
+  disabled?: boolean;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Select
+      value={String(value)}
+      onValueChange={(next) => onChange(Number(next))}
+      disabled={disabled}
+    >
+      <SelectTrigger id={id} aria-label={label} className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SESSION_DURATIONS.map((minutes) => (
+          <SelectItem key={minutes} value={String(minutes)}>
+            {durationLabel(minutes)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function SessionTypesSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [rate, setRate] = React.useState("");
+  const [duration, setDuration] = React.useState(60);
   const [pending, startTransition] = React.useTransition();
 
   return (
@@ -94,10 +140,12 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
               const result = await addSessionTypeAction(data.branch.id, {
                 name: trimmed,
                 ratePesos: Number(rate || 0),
+                durationMinutes: duration,
               });
               if (!result.ok) return void toast.error(result.error);
               setName("");
               setRate("");
+              setDuration(60);
               setOpen(false);
               toast.success(`${trimmed} added`);
             })
@@ -124,12 +172,17 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
               inputMode="numeric"
             />
           </div>
+          <div className="grid w-[140px] gap-1.5">
+            <Label htmlFor="st-duration">Time interval</Label>
+            <DurationSelect id="st-duration" value={duration} onChange={setDuration} />
+          </div>
         </AddForm>
         {data.sessionTypes.length ? (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Session type</TableHead>
+                <TableHead className="w-[160px]">Time interval</TableHead>
                 <TableHead className="w-[160px]">Rate per session</TableHead>
                 <TableHead className="w-[60px]">
                   <span className="sr-only">Remove</span>
@@ -144,6 +197,28 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
                       <SvcDot service={type.service} />
                       {type.name}
                     </span>
+                  </TableCell>
+                  <TableCell>
+                    <DurationSelect
+                      label={`${type.name} time interval`}
+                      value={type.durationMinutes}
+                      disabled={pending}
+                      className="h-8 w-[120px]"
+                      onChange={(minutes) =>
+                        startTransition(async () => {
+                          const result = await updateSessionTypeDurationAction(
+                            data.branch.id,
+                            type.id,
+                            minutes,
+                          );
+                          if (result.ok)
+                            toast.success(`${type.name} is now ${durationLabel(minutes)}`, {
+                              description: "Applies to new bookings.",
+                            });
+                          else toast.error(result.error);
+                        })
+                      }
+                    />
                   </TableCell>
                   <TableCell>
                     <RateField

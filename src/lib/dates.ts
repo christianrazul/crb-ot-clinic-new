@@ -70,6 +70,11 @@ export function manilaWeekday(instant: Date, timeZone: string = CLINIC_TIME_ZONE
   return Number(formatInTimeZone(instant, timeZone, "i")) % 7;
 }
 
+/** Clinic-local minute of the hour, 0 to 59. */
+export function manilaMinute(instant: Date, timeZone: string = CLINIC_TIME_ZONE): number {
+  return Number(formatInTimeZone(instant, timeZone, "m"));
+}
+
 /** Clinic-local hour of day, 0 to 23. */
 export function manilaHour(instant: Date, timeZone: string = CLINIC_TIME_ZONE): number {
   return Number(formatInTimeZone(instant, timeZone, "H"));

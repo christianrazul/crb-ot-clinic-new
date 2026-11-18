@@ -12,7 +12,7 @@ export type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; e
 
 /** Postgres constraint errors that can reach a user, explained in plain words. */
 const PG_MESSAGES: Record<string, string> = {
-  "23P01": "That time is already taken for this therapist or patient. Pick another time.",
+  "23P01": "That patient already has a session at that time. Pick another time.",
   "23505": "That already exists. Check the list and try again.",
   "23503": "Something this refers to no longer exists. Reload the page and try again.",
   "23514": "Some details aren't valid. Check the form and try again.",

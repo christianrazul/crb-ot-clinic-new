@@ -404,17 +404,17 @@ Changing opening days or hours never moves or cancels existing bookings. The boo
 
 - the session type is offered
 - the therapist is at this branch, active, and in an allowed rate class
-- the hour is within opening hours
+- the session, at its length, fits within opening hours
 - the patient is active and at this branch
 - the date isn't in the past
 - every occurrence falls on an open day
-- no occurrence clashes with the therapist's or the patient's other sessions
+- no occurrence overlaps the patient's other sessions (a therapist may hold several patients in one hour, see D-124)
 
 If two people book the same slot at the same moment, both pass the checks, and the exclusion constraint stops the second insert. `runAction` turns that into "That time is already taken".
 
 ### D-069: Series and the daily job
 
-A recurring booking creates an `appointment_series` row (one weekday at one time) and its first 8 weeks of appointments. `materializeSeries()` extends every open series to 8 weeks past today. It skips series whose session type was removed or whose patient is inactive or removed. Slots already taken are skipped and counted, never double-booked. Running it twice in a day does nothing.
+A recurring booking creates an `appointment_series` row (one weekday at one time) and its first 8 weeks of appointments. `materializeSeries()` extends every open series to 8 weeks past today. It skips series whose session type was removed or whose patient is inactive or removed. Slots where the patient already has a session are skipped and counted, never double-booked. Running it twice in a day does nothing.
 
 It runs from `POST /api/jobs/materialize` with `Authorization: Bearer $CRON_SECRET` (compared in constant time; without `CRON_SECRET` set, the endpoint refuses everything), or from `pnpm jobs:materialize`. Cron setup is in Milestone 13.
 
@@ -722,3 +722,19 @@ Permissions: `appointment:book` now includes therapists (themselves only, no res
 What stays the same: a therapist edits the details only of patients they treat (primary or backup), and the edit button only shows on those. They write and edit notes only for their own sessions. Money stays hidden: no balances, credit or payments. The schedule screen still shows only their own column.
 
 This replaces the parts of D-120 and D-122 that hid other therapists' patients: someone else's patient no longer looks missing, and booking search shows guardians for everyone. Permissions: `patient:read` and `note:read` are no longer own-only for therapists; `patient:edit` still is.
+
+### D-124: A therapist can take several patients in one hour
+
+A therapist may have more than one patient in the same hour: a make up session when no other slot is free, or a real group session. Booking and the daily job no longer treat the therapist's own sessions as a clash, and `drizzle/0007_shared_therapist_hours.sql` drops `appointments_no_staff_overlap`. A patient still can't be in two sessions at once, so `appointments_no_patient_overlap` and its message stay. The day view stacks a shared hour's sessions in the therapist's cell.
+
+### D-125: Owner and desk can backlog sessions on past dates
+
+Superadmins and secretaries can book a session on any past date, so earlier records can be entered after the fact. Therapists are still held to today or later. Past entries are one-offs: a weekly repeat has to start today or later, because the series would otherwise begin in the past. The booking dialog lifts the calendar's past-date lock for them and hides "Repeat weekly" for a past date; the service enforces both. A backlogged session starts as scheduled and is then marked attended (or no-show) like any other, since status changes have no date limit.
+
+### D-126: Session types have a time interval
+
+A session type is either 30 minutes or 1 hour (`session_types.duration_minutes`, default 60, checked to those two values). The owner picks it under "Time interval" when adding a type in Settings, and can change it on the row; a change applies to new bookings only, because appointments store their own `starts_at` and `ends_at`.
+
+Sessions start on the hour or the half hour. `appointments_on_the_hour` became `appointments_on_the_half_hour`, and `appointment_series.start_minute` (0 or 30) sits beside `start_hour`. Opening hours are still whole hours. A session must end by closing time, so a 30-minute session can start at 4:30 PM when the clinic closes at 5, and a 1-hour session can't.
+
+The patient clash check, the series job and the patient exclusion constraint all compare time ranges, not start times, so a 30-minute session at 9:30 clashes with an hour at 9:00 for the same patient. The booking dialog lists only the start times that fit the chosen type, and moves the time back if switching to a longer type no longer fits. The day view places each session by start minute and length; overlapping sessions for one therapist sit side by side.
