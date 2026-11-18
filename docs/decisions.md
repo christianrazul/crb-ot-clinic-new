@@ -726,3 +726,7 @@ This replaces the parts of D-120 and D-122 that hid other therapists' patients: 
 ### D-124: A therapist can take several patients in one hour
 
 A therapist may have more than one patient in the same hour: a make up session when no other slot is free, or a real group session. Booking and the daily job no longer treat the therapist's own sessions as a clash, and `drizzle/0007_shared_therapist_hours.sql` drops `appointments_no_staff_overlap`. A patient still can't be in two sessions at once, so `appointments_no_patient_overlap` and its message stay. The day view stacks a shared hour's sessions in the therapist's cell.
+
+### D-125: Owner and desk can backlog sessions on past dates
+
+Superadmins and secretaries can book a session on any past date, so earlier records can be entered after the fact. Therapists are still held to today or later. Past entries are one-offs: a weekly repeat has to start today or later, because the series would otherwise begin in the past. The booking dialog lifts the calendar's past-date lock for them and hides "Repeat weekly" for a past date; the service enforces both. A backlogged session starts as scheduled and is then marked attended (or no-show) like any other, since status changes have no date limit.

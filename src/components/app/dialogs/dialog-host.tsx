@@ -71,6 +71,7 @@ export function DialogHost({ children, today }: { children: React.ReactNode; tod
           draft={request.draft}
           original={request.reschedule}
           defaultDate={request.draft?.date ?? today}
+          today={today}
         />
       )}
       {request?.kind === "session" &&

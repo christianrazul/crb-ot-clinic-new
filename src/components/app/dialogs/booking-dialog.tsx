@@ -37,6 +37,7 @@ import type { ServiceKey } from "@/lib/services";
 import { cn } from "@/lib/utils";
 import type { AppointmentDetail, BookingOptions } from "@/server/services/scheduling";
 
+import { useViewer } from "../shell/viewer-context";
 import { useDialogs } from "./dialog-host";
 import { NEW_PATIENT, PatientCombobox } from "./patient-combobox";
 import { useServerData } from "./use-server-data";
@@ -70,6 +71,8 @@ type Props = {
   /** Rescheduling: the session being moved. */
   original?: AppointmentDetail;
   defaultDate: string;
+  /** The clinic's current date; earlier dates are backlog entries. */
+  today: string;
 };
 
 export function BookingDialog(props: Props) {
@@ -106,9 +109,12 @@ function BookingForm({
   draft,
   original,
   defaultDate,
+  today,
   options,
 }: Props & { options: BookingOptions }) {
   const { openDialog } = useDialogs();
+  // The owner and the desk can backlog sessions on past dates.
+  const canBacklog = useViewer().role !== "therapist";
   const rescheduling = Boolean(original);
   const { branch } = options;
   const makeUp = options.sessionTypes.find((t) => t.service === null) ?? options.sessionTypes[0];
@@ -149,6 +155,7 @@ function BookingForm({
   const therapists = eligibleStaff(options.staff, type?.allowedRateClassIds ?? null);
   const isNew = form.patientId === NEW_PATIENT;
   const canSave = Boolean(form.staffId && (isNew ? query.trim() : form.patientId)) && !pending;
+  const isPast = form.date < today;
   const when = `${format(parseISO(form.date), "EEE, MMM d")}, ${hourLabel(form.hour)}`;
 
   const save = () =>
@@ -160,7 +167,7 @@ function BookingForm({
         sessionTypeId: form.sessionTypeId,
         date: form.date,
         hour: form.hour,
-        recurring: rescheduling ? false : form.recurring,
+        recurring: rescheduling || isPast ? false : form.recurring,
         rescheduleFromId: original?.id,
       });
       if (!result.ok) return setError(result.error);
@@ -314,7 +321,7 @@ function BookingForm({
                   }}
                   disabled={(date) =>
                     !branch.openDays.includes(date.getDay()) ||
-                    format(date, "yyyy-MM-dd") < defaultDate
+                    (!canBacklog && format(date, "yyyy-MM-dd") < today)
                   }
                   autoFocus
                 />
@@ -341,7 +348,7 @@ function BookingForm({
             </Select>
           </div>
         </div>
-        {!rescheduling && (
+        {!rescheduling && !isPast && (
           <label
             className={cn(
               "flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-colors",

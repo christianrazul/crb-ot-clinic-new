@@ -74,6 +74,24 @@ describe("booking", () => {
       ).rejects.toThrow(/Liam Santos already has a session at 9:00 AM/);
     }));
 
+  it("lets the owner and desk backlog a past session, but not a weekly repeat", () =>
+    inRollback(async (tx) => {
+      const { appointmentIds } = await bookAppointment(
+        tx,
+        ACTORS.owner,
+        book({ date: "2026-08-04", hour: 9 }),
+      );
+      const [row] = await tx
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, appointmentIds[0]!));
+      expect(row).toMatchObject({ patientId: "pat_12", status: "scheduled" });
+      await expect(
+        bookAppointment(tx, ACTORS.owner, book({ date: "2026-08-04", hour: 10, recurring: true })),
+      ).rejects.toThrow(/Weekly repeats start today or later/);
+      await bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-04", hour: 11 }));
+    }));
+
   it("enforces opening days, hours, the past, rate classes and inactive patients", () =>
     inRollback(async (tx) => {
       await expect(bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-23" }))).rejects.toThrow(
@@ -82,9 +100,13 @@ describe("booking", () => {
       await expect(bookAppointment(tx, ACTORS.desk, book({ hour: 17 }))).rejects.toThrow(
         /run from 9:00 AM to 4:00 PM/,
       );
-      await expect(bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-21" }))).rejects.toThrow(
-        /date has passed/,
-      );
+      await expect(
+        bookAppointment(
+          tx,
+          ACTORS.therapist,
+          book({ staffId: "stf_delarosa", date: "2026-08-21" }),
+        ),
+      ).rejects.toThrow(/date has passed/);
       await expect(
         bookAppointment(
           tx,

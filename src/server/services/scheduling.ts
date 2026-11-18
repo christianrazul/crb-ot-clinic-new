@@ -323,7 +323,15 @@ export async function bookAppointment(
 
   const dates = occurrences(v.date, v.recurring && !v.rescheduleFromId);
   const today = clinicToday();
-  if (dates[0]! < today) throw new ValidationError("That date has passed. Pick today or later.");
+  if (dates[0]! < today) {
+    // The owner and the desk backlog past sessions, one at a time; therapists book ahead.
+    if (actor.role === "therapist")
+      throw new ValidationError("That date has passed. Pick today or later.");
+    if (v.recurring && !v.rescheduleFromId)
+      throw new ValidationError(
+        "Weekly repeats start today or later. Book past sessions one at a time.",
+      );
+  }
   for (const date of dates) {
     const startsAt = slotStart(date, v.hour);
     if (!branch.openDays.includes(manilaWeekday(startsAt))) {
