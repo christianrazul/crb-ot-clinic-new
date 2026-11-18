@@ -25,7 +25,7 @@ export const branches = pgTable(
     name: text().notNull().unique(),
     location: text().notNull(),
     isMain: boolean().notNull().default(false),
-    /** Sessions are one hour and start on the hour, so hours are enough. */
+    /** Opening hours are whole hours; sessions start on the hour or half hour. */
     opensAtHour: smallint().notNull().default(9),
     closesAtHour: smallint().notNull().default(17),
     /** 0 = Sunday ... 6 = Saturday */
@@ -117,6 +117,8 @@ export const sessionTypes = pgTable(
     /** Null for uncategorized types such as make up sessions. */
     service: patientServiceEnum(),
     rateCentavos: integer().notNull(),
+    /** How long a session of this type runs: 30 minutes or 1 hour. */
+    durationMinutes: smallint().notNull().default(60),
     /** When true any rate class may run it; otherwise see session_type_rate_classes. */
     anyRateClass: boolean().notNull().default(false),
     active: boolean().notNull().default(true),
@@ -127,6 +129,7 @@ export const sessionTypes = pgTable(
   (t) => [
     uniqueIndex("session_types_branch_name").on(t.branchId, t.name),
     check("session_types_rate_positive", sql`${t.rateCentavos} >= 0`),
+    check("session_types_duration", sql`${t.durationMinutes} in (30, 60)`),
   ],
 );
 

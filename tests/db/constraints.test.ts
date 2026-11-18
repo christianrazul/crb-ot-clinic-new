@@ -91,14 +91,21 @@ describe("a patient cannot be double-booked", () => {
 });
 
 describe("appointment checks", () => {
-  it("sessions start on the hour", () =>
+  it("sessions start on the hour or the half hour", () =>
     inRollback(async (tx) => {
+      await tx.insert(t.appointments).values(
+        appointment({
+          startsAt: at("2026-09-08", "16:30"),
+          endsAt: at("2026-09-08", "17:00"),
+        }),
+      );
       expect(
         await failureCode(tx, (s) =>
           s.insert(t.appointments).values(
             appointment({
-              startsAt: at("2026-09-08", "16:30"),
-              endsAt: at("2026-09-08", "17:30"),
+              patientId: "pat_13",
+              startsAt: at("2026-09-08", "10:15"),
+              endsAt: at("2026-09-08", "10:45"),
             }),
           ),
         ),

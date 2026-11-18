@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { fromManilaLocal } from "@/lib/dates";
 import { ForbiddenError } from "@/server/auth/permissions";
-import { appointmentSeries, appointments, patients } from "@/server/db/schema";
+import { appointmentSeries, appointments, patients, sessionTypes } from "@/server/db/schema";
 import { setAppointmentStatus } from "@/server/services/appointments";
 import {
   bookAppointment,
@@ -90,6 +90,41 @@ describe("booking", () => {
         bookAppointment(tx, ACTORS.owner, book({ date: "2026-08-04", hour: 10, recurring: true })),
       ).rejects.toThrow(/Weekly repeats start today or later/);
       await bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-04", hour: 11 }));
+    }));
+
+  it("books a half-hour session type for half an hour, on the half hour", () =>
+    inRollback(async (tx) => {
+      await tx.insert(sessionTypes).values({
+        id: "st_half",
+        branchId: "br_bangkal",
+        name: "Quick check-in",
+        rateCentavos: 35_000,
+        durationMinutes: 30,
+        anyRateClass: true,
+      });
+      const half = (values: Record<string, unknown>) =>
+        book({ sessionTypeId: "st_half", date: "2026-08-25", ...values });
+      const { appointmentIds } = await bookAppointment(
+        tx,
+        ACTORS.desk,
+        half({ hour: 9, minute: 30 }),
+      );
+      const [row] = await tx
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, appointmentIds[0]!));
+      expect(row!.endsAt.getTime() - row!.startsAt.getTime()).toBe(30 * 60_000);
+      expect(row!.feeCentavos).toBe(35_000);
+      // Back to back is fine; the same patient overlapping is not.
+      await bookAppointment(tx, ACTORS.desk, half({ hour: 10 }));
+      await expect(
+        bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-25", hour: 9, minute: 0 })),
+      ).rejects.toThrow(/already has a session at 9:00 AM/);
+      // A half hour fits in the last half hour of the day; an hour doesn't.
+      await bookAppointment(tx, ACTORS.desk, half({ hour: 16, minute: 30 }));
+      await expect(
+        bookAppointment(tx, ACTORS.desk, book({ date: "2026-08-25", hour: 16, minute: 30 })),
+      ).rejects.toThrow(/run from 9:00 AM to 4:00 PM/);
     }));
 
   it("enforces opening days, hours, the past, rate classes and inactive patients", () =>

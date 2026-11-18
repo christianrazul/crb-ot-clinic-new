@@ -14,6 +14,7 @@ import {
   setStaffActive,
   updateBranchHours,
   updateRateClasses,
+  updateSessionTypeDuration,
   updateSessionTypeRate,
   updateStaff,
 } from "@/server/services/settings";
@@ -94,6 +95,24 @@ export async function updateSessionTypeRateAction(
           branchId: branch,
           id: id.parse(sessionTypeId),
           ratePesos,
+        }),
+      ),
+    ),
+  );
+}
+
+export async function updateSessionTypeDurationAction(
+  branchId: unknown,
+  sessionTypeId: unknown,
+  durationMinutes: unknown,
+) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        updateSessionTypeDuration(db, actor, {
+          branchId: branch,
+          id: id.parse(sessionTypeId),
+          durationMinutes,
         }),
       ),
     ),

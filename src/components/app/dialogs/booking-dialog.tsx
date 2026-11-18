@@ -30,7 +30,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { bookableHours, eligibleStaff, hourLabel } from "@/lib/booking";
+import {
+  bookableStarts,
+  durationLabel,
+  eligibleStaff,
+  minutesLabel,
+  toMinutes,
+} from "@/lib/booking";
 import { formatManila } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import type { ServiceKey } from "@/lib/services";
@@ -61,6 +67,8 @@ export type BookingDraft = {
   /** yyyy-MM-dd */
   date: string;
   hour: number;
+  /** 0 or 30. */
+  minute: number;
   recurring: boolean;
 };
 
@@ -119,16 +127,31 @@ function BookingForm({
   const { branch } = options;
   const makeUp = options.sessionTypes.find((t) => t.service === null) ?? options.sessionTypes[0];
 
-  const [form, setForm] = React.useState<BookingDraft>({
-    sessionTypeId: rescheduling ? (makeUp?.id ?? "") : (options.sessionTypes[0]?.id ?? ""),
-    patientId: original?.patient.id ?? null,
-    // A therapist is only offered themselves, so they start picked.
-    staffId: original?.staffId ?? (options.staff.length === 1 ? options.staff[0]!.id : null),
-    // As in the mockup: the next open day after today, unless the caller picked one.
-    date: nextOpenDay(defaultDate, branch.openDays),
-    hour: branch.opensAtHour,
-    recurring: false,
-    ...draft,
+  const [form, setForm] = React.useState<BookingDraft>(() => {
+    const initial: BookingDraft = {
+      sessionTypeId: rescheduling ? (makeUp?.id ?? "") : (options.sessionTypes[0]?.id ?? ""),
+      patientId: original?.patient.id ?? null,
+      // A therapist is only offered themselves, so they start picked.
+      staffId: original?.staffId ?? (options.staff.length === 1 ? options.staff[0]!.id : null),
+      // As in the mockup: the next open day after today, unless the caller picked one.
+      date: nextOpenDay(defaultDate, branch.openDays),
+      hour: branch.opensAtHour,
+      minute: 0,
+      recurring: false,
+      ...draft,
+    };
+    // A draft slot too late for the first session type's length moves back to fit.
+    const starts = bookableStarts(
+      branch.opensAtHour,
+      branch.closesAtHour,
+      options.sessionTypes.find((t) => t.id === initial.sessionTypeId)?.durationMinutes ?? 60,
+    );
+    const current = toMinutes(initial.hour, initial.minute);
+    if (starts.length && !starts.includes(current)) {
+      const fixed = Math.min(current, starts.at(-1)!);
+      return { ...initial, hour: Math.floor(fixed / 60), minute: fixed % 60 };
+    }
+    return initial;
   });
   const [selected, setSelected] = React.useState<{
     id: string;
@@ -156,7 +179,8 @@ function BookingForm({
   const isNew = form.patientId === NEW_PATIENT;
   const canSave = Boolean(form.staffId && (isNew ? query.trim() : form.patientId)) && !pending;
   const isPast = form.date < today;
-  const when = `${format(parseISO(form.date), "EEE, MMM d")}, ${hourLabel(form.hour)}`;
+  const start = toMinutes(form.hour, form.minute);
+  const when = `${format(parseISO(form.date), "EEE, MMM d")}, ${minutesLabel(start)}`;
 
   const save = () =>
     startTransition(async () => {
@@ -167,6 +191,7 @@ function BookingForm({
         sessionTypeId: form.sessionTypeId,
         date: form.date,
         hour: form.hour,
+        minute: form.minute as 0 | 30,
         recurring: rescheduling || isPast ? false : form.recurring,
         rescheduleFromId: original?.id,
       });
@@ -201,7 +226,7 @@ function BookingForm({
         <DialogDescription>
           {rescheduling
             ? "Booked as a make up session. The original slot is marked as moved."
-            : `${branch.name}. One-hour sessions, booked on the hour.`}
+            : `${branch.name}. Sessions start on the hour or half hour.`}
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="grid gap-4">
@@ -224,7 +249,18 @@ function BookingForm({
                 null;
               const member = options.staff.find((s) => s.id === form.staffId);
               const keep = Boolean(member && eligibleStaff([member], allowed).length);
-              update({ sessionTypeId, staffId: keep ? form.staffId : null });
+              // A longer session may not fit at the current time; move it to the latest start that does.
+              const length =
+                options.sessionTypes.find((t) => t.id === sessionTypeId)?.durationMinutes ?? 60;
+              const starts = bookableStarts(branch.opensAtHour, branch.closesAtHour, length);
+              const fits = starts.includes(start) || !starts.length;
+              const moved = fits ? start : Math.min(start, starts.at(-1)!);
+              update({
+                sessionTypeId,
+                staffId: keep ? form.staffId : null,
+                hour: Math.floor(moved / 60),
+                minute: moved % 60,
+              });
             }}
           >
             <SelectTrigger id="book-type">
@@ -238,6 +274,9 @@ function BookingForm({
                     {t.name}
                     <span className="ml-2 text-muted-foreground tabular-nums">
                       {formatPeso(t.rateCentavos)}
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {durationLabel(t.durationMinutes)}
                     </span>
                   </span>
                 </SelectItem>
@@ -331,17 +370,23 @@ function BookingForm({
           <div className="grid gap-1.5">
             <Label htmlFor="book-time">Time</Label>
             <Select
-              value={String(form.hour)}
-              onValueChange={(hour) => update({ hour: Number(hour) })}
+              value={String(start)}
+              onValueChange={(minutes) =>
+                update({ hour: Math.floor(Number(minutes) / 60), minute: Number(minutes) % 60 })
+              }
             >
               <SelectTrigger id="book-time" className="justify-start">
                 <Clock className="size-4 shrink-0 text-muted-foreground" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {bookableHours(branch.opensAtHour, branch.closesAtHour).map((hour) => (
-                  <SelectItem key={hour} value={String(hour)}>
-                    {hourLabel(hour)}
+                {bookableStarts(
+                  branch.opensAtHour,
+                  branch.closesAtHour,
+                  type?.durationMinutes ?? 60,
+                ).map((minutes) => (
+                  <SelectItem key={minutes} value={String(minutes)}>
+                    {minutesLabel(minutes)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -366,7 +411,7 @@ function BookingForm({
               </span>
               <span className="text-xs text-muted-foreground">
                 {form.recurring
-                  ? `Every ${format(parseISO(form.date), "EEEE")} at ${hourLabel(form.hour)} until cancelled.`
+                  ? `Every ${format(parseISO(form.date), "EEEE")} at ${minutesLabel(start)} until cancelled.`
                   : "A one-off session on the selected date."}
               </span>
             </span>

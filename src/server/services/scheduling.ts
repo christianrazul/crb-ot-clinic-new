@@ -1,10 +1,16 @@
 import "server-only";
 
 import { addDays, addWeeks, format, parseISO } from "date-fns";
-import { and, asc, eq, gte, inArray, isNull, lt, ne, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, notInArray, or } from "drizzle-orm";
 
-import { bookableHours, eligibleStaff, hourLabel } from "@/lib/booking";
-import { fromManilaLocal, manilaHour, manilaWeekday, toManilaIsoDate } from "@/lib/dates";
+import { bookableHours, eligibleStaff, minutesLabel, toMinutes } from "@/lib/booking";
+import {
+  fromManilaLocal,
+  manilaHour,
+  manilaMinute,
+  manilaWeekday,
+  toManilaIsoDate,
+} from "@/lib/dates";
 import type { ServiceKey } from "@/lib/services";
 import { bookingInput } from "@/lib/validation/booking";
 import type { Actor } from "@/server/auth/actor";
@@ -32,9 +38,9 @@ import { NotFoundError, ValidationError } from "./errors";
 /** Recurring bookings are materialized this far ahead; the daily job keeps it rolling. */
 export const HORIZON_WEEKS = 8;
 const HOLDS_SLOT = ["scheduled", "checked_in", "attended", "no_show"] as const;
-const ONE_HOUR = 60 * 60 * 1000;
-const slotStart = (date: string, hour: number) =>
-  fromManilaLocal(date, `${String(hour).padStart(2, "0")}:00`);
+const ONE_MINUTE = 60 * 1000;
+const slotStart = (date: string, hour: number, minute = 0) =>
+  fromManilaLocal(date, `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
 const shortDate = (date: string) => format(parseISO(date), "EEE, MMM d");
 
 /** The colour of a session: the staff member's rate class, so OT Aide shows pink. */
@@ -61,6 +67,7 @@ async function appointmentsInRange(
     .select({
       id: appointments.id,
       startsAt: appointments.startsAt,
+      endsAt: appointments.endsAt,
       status: appointments.status,
       staffId: appointments.staffId,
       patientId: appointments.patientId,
@@ -94,6 +101,8 @@ async function appointmentsInRange(
         startsAt: r.startsAt.toISOString(),
         date: toManilaIsoDate(r.startsAt),
         hour: manilaHour(r.startsAt),
+        minute: manilaMinute(r.startsAt),
+        durationMinutes: Math.round((r.endsAt.getTime() - r.startsAt.getTime()) / ONE_MINUTE),
         status: r.status,
         staffId: r.staffId,
         patientId: r.patientId,
@@ -239,6 +248,7 @@ export async function getBookingOptions(db: DbExecutor, actor: Actor, branchId: 
         name: t.name,
         service: t.service,
         rateCentavos: t.rateCentavos,
+        durationMinutes: t.durationMinutes,
         allowedRateClassIds: t.allowedRateClassIds,
       })),
     staff: staffRows,
@@ -287,9 +297,10 @@ export async function bookAppointment(
       `${member.displayName} (${rc?.name ?? "this role"}) can't run ${type.name.toLowerCase()}s. Pick another therapist.`,
     );
   }
-  if (v.hour < branch.opensAtHour || v.hour + 1 > branch.closesAtHour) {
+  const start = toMinutes(v.hour, v.minute);
+  if (start < branch.opensAtHour * 60 || start + type.durationMinutes > branch.closesAtHour * 60) {
     throw new ValidationError(
-      `Sessions at ${branch.name} run from ${hourLabel(branch.opensAtHour)} to ${hourLabel(branch.closesAtHour - 1)}.`,
+      `${type.name}s at ${branch.name} run from ${minutesLabel(branch.opensAtHour * 60)} to ${minutesLabel(branch.closesAtHour * 60 - type.durationMinutes)}.`,
     );
   }
 
@@ -333,7 +344,8 @@ export async function bookAppointment(
       );
   }
   for (const date of dates) {
-    const startsAt = slotStart(date, v.hour);
+    const startsAt = slotStart(date, v.hour, v.minute);
+    const endsAt = new Date(startsAt.getTime() + type.durationMinutes * ONE_MINUTE);
     if (!branch.openDays.includes(manilaWeekday(startsAt))) {
       throw new ValidationError(
         `${branch.name} is closed on ${format(parseISO(date), "EEEE")}s. Pick another day.`,
@@ -348,7 +360,8 @@ export async function bookAppointment(
         .from(appointments)
         .where(
           and(
-            eq(appointments.startsAt, startsAt),
+            lt(appointments.startsAt, endsAt),
+            gt(appointments.endsAt, startsAt),
             inArray(appointments.status, [...HOLDS_SLOT]),
             eq(appointments.patientId, patientId),
             v.rescheduleFromId ? ne(appointments.id, v.rescheduleFromId) : undefined,
@@ -356,7 +369,7 @@ export async function bookAppointment(
         );
       if (clash)
         throw new ValidationError(
-          `${patientName} already has a session at ${hourLabel(v.hour)} on ${shortDate(date)}.`,
+          `${patientName} already has a session at ${minutesLabel(start)} on ${shortDate(date)}.`,
         );
     }
   }
@@ -397,8 +410,9 @@ export async function bookAppointment(
         patientId,
         staffId: v.staffId,
         sessionTypeId: type.id,
-        weekday: manilaWeekday(slotStart(v.date, v.hour)),
+        weekday: manilaWeekday(slotStart(v.date, v.hour, v.minute)),
         startHour: v.hour,
+        startMinute: v.minute,
         startsOn: v.date,
         materializedUntil: dates.at(-1)!,
         createdByUserId: actor.userId,
@@ -424,7 +438,7 @@ export async function bookAppointment(
     .insert(appointments)
     .values(
       dates.map((date) => {
-        const startsAt = slotStart(date, v.hour);
+        const startsAt = slotStart(date, v.hour, v.minute);
         return {
           branchId: input.branchId,
           patientId: patientId!,
@@ -432,7 +446,7 @@ export async function bookAppointment(
           sessionTypeId: type.id,
           seriesId,
           startsAt,
-          endsAt: new Date(startsAt.getTime() + ONE_HOUR),
+          endsAt: new Date(startsAt.getTime() + type.durationMinutes * ONE_MINUTE),
           // Snapshot of the rate when booked.
           feeCentavos: type.rateCentavos,
           isMakeUp: Boolean(v.rescheduleFromId),
@@ -576,6 +590,7 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
     .select({
       series: appointmentSeries,
       rateCentavos: sessionTypes.rateCentavos,
+      durationMinutes: sessionTypes.durationMinutes,
       active: sessionTypes.active,
       patientStatus: patients.status,
       patientDeleted: patients.deletedAt,
@@ -591,18 +606,27 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
     );
   let created = 0;
   const skipped: { seriesId: string; date: string }[] = [];
-  for (const { series, rateCentavos, active, patientStatus, patientDeleted } of open) {
+  for (const {
+    series,
+    rateCentavos,
+    durationMinutes,
+    active,
+    patientStatus,
+    patientDeleted,
+  } of open) {
     if (!active || patientStatus !== "active" || patientDeleted) continue;
     let date = format(addWeeks(parseISO(series.materializedUntil), 1), "yyyy-MM-dd");
     const last = series.endsOn && series.endsOn < horizon ? series.endsOn : horizon;
     while (date <= last) {
-      const startsAt = slotStart(date, series.startHour);
+      const startsAt = slotStart(date, series.startHour, series.startMinute);
+      const endsAt = new Date(startsAt.getTime() + durationMinutes * ONE_MINUTE);
       const taken = await db
         .select({ id: appointments.id })
         .from(appointments)
         .where(
           and(
-            eq(appointments.startsAt, startsAt),
+            lt(appointments.startsAt, endsAt),
+            gt(appointments.endsAt, startsAt),
             notInArray(appointments.status, ["cancelled", "rescheduled"]),
             eq(appointments.patientId, series.patientId),
           ),
@@ -616,7 +640,7 @@ export async function materializeSeries(db: DbExecutor, options: { today?: strin
           sessionTypeId: series.sessionTypeId,
           seriesId: series.id,
           startsAt,
-          endsAt: new Date(startsAt.getTime() + ONE_HOUR),
+          endsAt,
           feeCentavos: rateCentavos,
         });
         created += 1;

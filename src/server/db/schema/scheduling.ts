@@ -37,6 +37,8 @@ export const appointmentSeries = pgTable(
     /** 0 = Sunday ... 6 = Saturday */
     weekday: smallint().notNull(),
     startHour: smallint().notNull(),
+    /** Sessions start on the hour or the half hour. */
+    startMinute: smallint().notNull().default(0),
     startsOn: date({ mode: "string" }).notNull(),
     endsOn: date({ mode: "string" }),
     /** Appointments exist up to and including this date. */
@@ -52,6 +54,7 @@ export const appointmentSeries = pgTable(
     index().on(t.sessionTypeId),
     check("series_weekday", sql`${t.weekday} between 0 and 6`),
     check("series_hour", sql`${t.startHour} between 0 and 23`),
+    check("series_minute", sql`${t.startMinute} in (0, 30)`),
     check("series_dates", sql`${t.endsOn} is null or ${t.endsOn} >= ${t.startsOn}`),
   ],
 );
@@ -102,10 +105,10 @@ export const appointments = pgTable(
     index().on(t.statusChangedByUserId),
     index().on(t.createdByUserId),
     check("appointments_ends_after_start", sql`${t.endsAt} > ${t.startsAt}`),
-    // Asia/Manila is a whole-hour offset, so "on the hour" in UTC is on the hour locally.
+    // Asia/Manila is a whole-hour offset, so the minute in UTC is the minute locally.
     check(
-      "appointments_on_the_hour",
-      sql`extract(minute from ${t.startsAt}) = 0 and extract(second from ${t.startsAt}) = 0`,
+      "appointments_on_the_half_hour",
+      sql`extract(minute from ${t.startsAt}) in (0, 30) and extract(second from ${t.startsAt}) = 0`,
     ),
     check("appointments_fee_positive", sql`${t.feeCentavos} >= 0`),
     check(

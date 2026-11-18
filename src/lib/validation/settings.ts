@@ -16,6 +16,10 @@ export const rateClassesInput = z
 export const sessionTypeInput = z.object({
   name: z.string().trim().min(2, "Enter a name for the session type.").max(60),
   ratePesos: pesos,
+  /** Minutes: a half-hour or a one-hour session. */
+  durationMinutes: z
+    .union([z.literal(30), z.literal(60)], { error: "Pick 30 minutes or 1 hour." })
+    .default(60),
 });
 
 export const staffInput = z.object({

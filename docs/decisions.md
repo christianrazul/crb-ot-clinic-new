@@ -404,11 +404,11 @@ Changing opening days or hours never moves or cancels existing bookings. The boo
 
 - the session type is offered
 - the therapist is at this branch, active, and in an allowed rate class
-- the hour is within opening hours
+- the session, at its length, fits within opening hours
 - the patient is active and at this branch
 - the date isn't in the past
 - every occurrence falls on an open day
-- no occurrence clashes with the patient's other sessions (a therapist may hold several patients in one hour, see D-124)
+- no occurrence overlaps the patient's other sessions (a therapist may hold several patients in one hour, see D-124)
 
 If two people book the same slot at the same moment, both pass the checks, and the exclusion constraint stops the second insert. `runAction` turns that into "That time is already taken".
 
@@ -730,3 +730,11 @@ A therapist may have more than one patient in the same hour: a make up session w
 ### D-125: Owner and desk can backlog sessions on past dates
 
 Superadmins and secretaries can book a session on any past date, so earlier records can be entered after the fact. Therapists are still held to today or later. Past entries are one-offs: a weekly repeat has to start today or later, because the series would otherwise begin in the past. The booking dialog lifts the calendar's past-date lock for them and hides "Repeat weekly" for a past date; the service enforces both. A backlogged session starts as scheduled and is then marked attended (or no-show) like any other, since status changes have no date limit.
+
+### D-126: Session types have a time interval
+
+A session type is either 30 minutes or 1 hour (`session_types.duration_minutes`, default 60, checked to those two values). The owner picks it under "Time interval" when adding a type in Settings, and can change it on the row; a change applies to new bookings only, because appointments store their own `starts_at` and `ends_at`.
+
+Sessions start on the hour or the half hour. `appointments_on_the_hour` became `appointments_on_the_half_hour`, and `appointment_series.start_minute` (0 or 30) sits beside `start_hour`. Opening hours are still whole hours. A session must end by closing time, so a 30-minute session can start at 4:30 PM when the clinic closes at 5, and a 1-hour session can't.
+
+The patient clash check, the series job and the patient exclusion constraint all compare time ranges, not start times, so a 30-minute session at 9:30 clashes with an hour at 9:00 for the same patient. The booking dialog lists only the start times that fit the chosen type, and moves the time back if switching to a longer type no longer fits. The day view places each session by start minute and length; overlapping sessions for one therapist sit side by side.
