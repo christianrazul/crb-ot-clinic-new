@@ -50,6 +50,8 @@ export type TopUpCorrection = {
   referenceNo: string | null;
   receiptNo: string;
   notes: string | null;
+  /** The day the original was received (yyyy-MM-dd). */
+  receivedOn: string;
 };
 type Props = {
   open: boolean;
@@ -78,6 +80,7 @@ export function AdvancePaymentDialog({
   const [referenceNo, setReferenceNo] = React.useState(correcting?.referenceNo ?? "");
   const [receiptNo, setReceiptNo] = React.useState(correcting?.receiptNo ?? "");
   const [notes, setNotes] = React.useState(correcting?.notes ?? "");
+  const [receivedOn, setReceivedOn] = React.useState(correcting?.receivedOn ?? today);
   const [reason, setReason] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -116,6 +119,7 @@ export function AdvancePaymentDialog({
         referenceNo,
         receiptNo,
         notes,
+        receivedOn: receivedOn || undefined,
       };
       const result = correcting
         ? await correctTopUpAction(correcting.entryId, reason, values)
@@ -253,6 +257,22 @@ export function AdvancePaymentDialog({
                 placeholder="Automatic"
               />
             </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="tu-received-on">Received on</Label>
+            <Input
+              id="tu-received-on"
+              type="date"
+              value={receivedOn}
+              max={today}
+              onChange={(event) => setReceivedOn(event.target.value)}
+              className="tabular-nums"
+            />
+            {receivedOn < today && (
+              <p className="text-xs text-muted-foreground">
+                Recorded as received on this earlier day, for backlogged payments.
+              </p>
+            )}
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="tu-notes">

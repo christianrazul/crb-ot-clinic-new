@@ -101,6 +101,7 @@ function PaymentForm({
   const [method, setMethod] = React.useState<PaymentMethod>("cash");
   const [receivedText, setReceivedText] = React.useState("");
   const [referenceNo, setReferenceNo] = React.useState("");
+  const [receivedOn, setReceivedOn] = React.useState(context.receivedOn);
 
   const paymentInput = {
     useCredit,
@@ -108,6 +109,7 @@ function PaymentForm({
     method,
     cashReceivedCentavos: toCentavos(receivedText),
     referenceNo,
+    receivedOn: receivedOn || undefined,
   };
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
@@ -326,6 +328,23 @@ function PaymentForm({
             )}
           </>
         )}
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="received-on">Received on</Label>
+          <Input
+            id="received-on"
+            type="date"
+            value={receivedOn}
+            max={context.today}
+            onChange={(event) => setReceivedOn(event.target.value)}
+            className="tabular-nums"
+          />
+          {receivedOn < context.today && (
+            <p className="text-xs text-muted-foreground">
+              Recorded as received on this earlier day, for backlogged payments.
+            </p>
+          )}
+        </div>
 
         {error && (
           <p

@@ -64,7 +64,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { withRunningBalance } from "@/lib/credit";
-import { formatManila } from "@/lib/dates";
+import { formatManila, toManilaIsoDate } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { SERVICE_LABELS } from "@/lib/services";
 import { cn } from "@/lib/utils";
@@ -626,6 +626,7 @@ export function PatientDetail({
                                       referenceNo: entry.referenceNo,
                                       receiptNo: entry.receiptNo,
                                       notes: entry.notes,
+                                      receivedOn: toManilaIsoDate(new Date(entry.createdAt)),
                                     },
                                   })
                                 }

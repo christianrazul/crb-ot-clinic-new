@@ -1,6 +1,17 @@
 "use client";
 
-import { Ban, Check, HandCoins, MoreHorizontal, Pencil } from "lucide-react";
+import { addDays, format, parseISO } from "date-fns";
+import {
+  Ban,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  HandCoins,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
+import type { Route } from "next";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -22,6 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -40,6 +52,19 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 export function BillingScreen({ data, branchName }: { data: BillingPageData; branchName: string }) {
   const { openDialog } = useDialogs();
   const { items, totals } = data;
+  const router = useRouter();
+  const [navigating, startNavigation] = React.useTransition();
+  const isToday = data.date === data.today;
+  // Pick any day to record payments for sessions that already happened.
+  const goTo = (date: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+    startNavigation(() =>
+      router.replace((date === data.today ? "/billing" : `/billing?date=${date}`) as Route, {
+        scroll: false,
+      }),
+    );
+  };
+  const shift = (days: number) => goTo(format(addDays(parseISO(data.date), days), "yyyy-MM-dd"));
   const [voiding, setVoiding] = React.useState<(typeof items)[number] | null>(null);
 
   return (
@@ -48,6 +73,43 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
         title="Billing and payments"
         description={`${formatManila(new Date(`${data.date}T04:00:00Z`), "weekdayDayLong")}. Collect at the desk after each session.`}
       >
+        <div className="flex items-center gap-1" aria-busy={navigating}>
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Previous day"
+            onClick={() => shift(-1)}
+          >
+            <ChevronLeft />
+          </Button>
+          <Input
+            type="date"
+            aria-label="Billing date"
+            value={data.date}
+            max={data.today}
+            onChange={(event) => goTo(event.target.value)}
+            className="h-8 w-[150px] tabular-nums"
+          />
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Next day"
+            disabled={isToday}
+            onClick={() => shift(1)}
+          >
+            <ChevronRight />
+          </Button>
+          {!isToday && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary"
+              onClick={() => goTo(data.today)}
+            >
+              Today
+            </Button>
+          )}
+        </div>
         <Button size="sm" variant="outline" onClick={() => openDialog({ kind: "advance" })}>
           <HandCoins /> Record advance payment
         </Button>
@@ -55,7 +117,7 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
       <StatStrip
         items={[
           {
-            label: "Collected today",
+            label: isToday ? "Collected today" : "Collected this day",
             value: formatPeso(totals.collectedCentavos),
             sub: `${totals.paidCount} of ${items.length} sessions paid`,
           },
@@ -81,7 +143,11 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
       <Card className="overflow-hidden">
         <CardHeader className="flex-row items-center justify-between border-b pb-4">
           <div className="grid gap-1">
-            <CardTitle>Today&apos;s sessions</CardTitle>
+            <CardTitle>
+              {isToday
+                ? "Today's sessions"
+                : `Sessions on ${formatManila(new Date(`${data.date}T04:00:00Z`), "shortDay")}`}
+            </CardTitle>
             <CardDescription>{branchName}</CardDescription>
           </div>
           <div className="flex w-48 flex-col items-end gap-1.5">

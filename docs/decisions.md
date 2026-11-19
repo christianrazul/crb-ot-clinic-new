@@ -742,3 +742,9 @@ The patient clash check, the series job and the patient exclusion constraint all
 ### D-127: One audit advisory is ignored until a fix ships
 
 On 2026-11-18 the CI dependency audit started failing on GHSA-fc5q-39xc-vjpf, a ReDoS in `picomatch` (all versions up to 4.0.7, no patched release). It reaches the app only through `better-auth` → `vitest` → `picomatch`, a test-runner dependency, not code the clinic's own paths call. Because the audit blocks the image build and deploy, `package.json` lists it under `pnpm.auditConfig.ignoreGhsas`. Remove that entry as soon as a patched `picomatch` exists and the lockfile can take it.
+
+### D-128: Backlogging payments
+
+The billing screen can show any past day (`/billing?date=yyyy-MM-dd`, with previous and next buttons and a date picker), so the desk and the owner can record payments for sessions that already happened. The collect-payment and advance-payment dialogs have a "Received on" date, today by default and never in the future. The payment, the credit it spends and an advance are all stamped with that day (noon Manila time on past days, since the time isn't known), so the dashboard's monthly income counts the money in the month it was received. The audit log still records when the entry was actually made.
+
+Receipt numbers stay gapless in the order they are issued, so backlogged receipts get the next numbers, not numbers from the past. Correcting a payment or an advance keeps the original day unless the form changes it. A backlogged session starts as scheduled, so mark it attended before it appears on that day's billing list. The date defaults to today rather than the session's day, because a late collection really was received today.
