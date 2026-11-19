@@ -4,7 +4,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { fromManilaLocal } from "@/lib/dates";
+import { fromManilaLocal, toManilaIsoDate } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { quotePayment } from "@/lib/payment";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-methods";
@@ -16,7 +16,7 @@ import {
 } from "@/lib/validation/payments";
 import type { Actor } from "@/server/auth/actor";
 import { assertCan } from "@/server/auth/permissions";
-import { clinicNow } from "@/server/clock";
+import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
 import { writeAudit } from "@/server/db/queries/audit";
 import { owedByPatient } from "@/server/db/queries/balances";
@@ -38,6 +38,18 @@ import {
 } from "@/server/db/schema";
 
 import { NotFoundError, ValidationError } from "./errors";
+
+/**
+ * When money counts as received. Today (or no date) is now; an earlier day,
+ * for backlogging, is noon that day since the time isn't known. The audit log
+ * still records when it was actually entered.
+ */
+function receivedAt(receivedOn: string | undefined) {
+  const today = clinicToday();
+  if (!receivedOn || receivedOn === today) return clinicNow();
+  if (receivedOn > today) throw new ValidationError("The date received can't be in the future.");
+  return fromManilaLocal(receivedOn, "12:00");
+}
 
 const PAYABLE = ["scheduled", "checked_in", "attended"] as const;
 
@@ -219,6 +231,9 @@ export async function getPaymentContext(db: DbExecutor, actor: Actor, appointmen
     staffName: row.staffName,
     alreadyPaid: Boolean(row.paymentId),
     creditBalanceCentavos: await creditBalance(db, row.appointment.patientId),
+    /** The form's "received on" defaults to today; backlogging picks an earlier day. */
+    today: clinicToday(),
+    receivedOn: clinicToday(),
   };
 }
 export type PaymentContext = Awaited<ReturnType<typeof getPaymentContext>> & {
@@ -249,6 +264,7 @@ export async function getPaymentCorrectionContext(
   return {
     ...context,
     alreadyPaid: false,
+    receivedOn: toManilaIsoDate(payment.createdAt),
     creditBalanceCentavos: context.creditBalanceCentavos + payment.creditAppliedCentavos,
     correcting: {
       paymentId: payment.id,
@@ -311,6 +327,7 @@ export async function collectPayment(
     throw new ValidationError("Enter the cash received or choose another method.");
   }
 
+  const receivedTime = receivedAt(input.receivedOn);
   const receiptNo = await takeReceiptNumber(db, appointment.branchId);
   const [payment] = await db
     .insert(payments)
@@ -327,7 +344,7 @@ export async function collectPayment(
       receiptNo,
       receivedByUserId: actor.userId,
       replacesPaymentId: options.replacesPaymentId ?? null,
-      createdAt: clinicNow(),
+      createdAt: receivedTime,
     })
     .returning();
 
@@ -345,7 +362,7 @@ export async function collectPayment(
       receiptNo,
       relatedPaymentId: payment!.id,
       createdByUserId: actor.userId,
-      createdAt: clinicNow(),
+      createdAt: receivedTime,
     });
   }
   await writeAudit(db, {
@@ -402,7 +419,7 @@ export async function recordTopUp(
       notes: input.notes || null,
       createdByUserId: actor.userId,
       replacesEntryId: options.replacesEntryId ?? null,
-      createdAt: clinicNow(),
+      createdAt: receivedAt(input.receivedOn),
     })
     .returning();
   await writeAudit(db, {
@@ -511,7 +528,12 @@ export async function correctPayment(
   return collectPayment(
     db,
     actor,
-    { ...(input.payment as object), appointmentId: old.appointmentId },
+    {
+      // The corrected payment keeps the day the original was received unless changed.
+      receivedOn: toManilaIsoDate(old.createdAt),
+      ...(input.payment as object),
+      appointmentId: old.appointmentId,
+    },
     { replacesPaymentId: old.id },
   );
 }
@@ -577,7 +599,11 @@ export async function correctTopUp(
   const entry = await lockedEntry(db, actor, input.entryId);
   const reason = reasonInput.parse(input.reason);
   if (entry.type !== "top_up") throw new ValidationError("Only advance payments can be edited.");
-  const topUp = topUpInput.parse({ ...(input.topUp as object), patientId: entry.patientId });
+  const topUp = topUpInput.parse({
+    receivedOn: toManilaIsoDate(entry.createdAt),
+    ...(input.topUp as object),
+    patientId: entry.patientId,
+  });
   const after =
     (await creditBalance(db, entry.patientId)) - entry.amountCentavos + topUp.amountCentavos;
   if (after < 0) throw new ValidationError(spentMessage(after));

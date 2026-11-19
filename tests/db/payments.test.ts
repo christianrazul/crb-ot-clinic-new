@@ -7,6 +7,7 @@ import { auditLog, creditLedger, payments, receiptCounters } from "@/server/db/s
 import { getNotifications } from "@/server/services/notifications";
 import {
   collectPayment,
+  correctPayment,
   getBillingDay,
   lowCreditPatients,
   recordTopUp,
@@ -121,6 +122,70 @@ describe("collecting payment", () => {
       });
     }
   });
+});
+
+describe("backlogged payments", () => {
+  const dayOf = (instant: Date) => instant.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+
+  it("dates a payment on the day it was received, not the day it was entered", () =>
+    inRollback(async (tx) => {
+      await collectPayment(tx, ACTORS.desk, { ...cash(TAN, 70_000), receivedOn: "2026-08-14" });
+      const [row] = await tx.select().from(payments).where(eq(payments.appointmentId, TAN));
+      expect(dayOf(row!.createdAt)).toBe("2026-08-14");
+      // The audit log still says when it was actually entered.
+      const [audit] = await tx
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.action, "payment.collect"));
+      expect(dayOf(audit!.createdAt)).not.toBe("2026-08-14");
+    }));
+
+  it("dates the credit it spends and an advance the same way", () =>
+    inRollback(async (tx) => {
+      await collectPayment(tx, ACTORS.desk, {
+        appointmentId: RAMOS,
+        useCredit: true,
+        creditRequestedCentavos: null,
+        method: "cash",
+        cashReceivedCentavos: null,
+        referenceNo: "",
+        receivedOn: "2026-08-10",
+      });
+      const spent = await tx.select().from(creditLedger).where(eq(creditLedger.type, "deduction"));
+      expect(spent.some((e) => dayOf(e.createdAt) === "2026-08-10")).toBe(true);
+      await recordTopUp(tx, ACTORS.desk, {
+        patientId: "pat_06",
+        amountCentavos: 100_000,
+        method: "cash",
+        receivedOn: "2026-08-05",
+      });
+      const [topUp] = await tx
+        .select()
+        .from(creditLedger)
+        .where(eq(creditLedger.patientId, "pat_06"));
+      expect(dayOf(topUp!.createdAt)).toBe("2026-08-05");
+    }));
+
+  it("refuses a future date", () =>
+    inRollback(async (tx) => {
+      await expect(
+        collectPayment(tx, ACTORS.desk, { ...cash(TAN, 70_000), receivedOn: "2026-12-01" }),
+      ).rejects.toThrow(/can't be in the future/);
+    }));
+
+  it("keeps the original day when a payment is corrected", () =>
+    inRollback(async (tx) => {
+      await collectPayment(tx, ACTORS.desk, { ...cash(TAN, 70_000), receivedOn: "2026-08-14" });
+      const [old] = await tx.select().from(payments).where(eq(payments.appointmentId, TAN));
+      await correctPayment(tx, ACTORS.desk, {
+        paymentId: old!.id,
+        reason: "Wrong amount typed",
+        payment: cash(TAN, 80_000),
+      });
+      const live = await tx.select().from(payments).where(eq(payments.appointmentId, TAN));
+      const fresh = live.find((p) => !p.voidedAt);
+      expect(dayOf(fresh!.createdAt)).toBe("2026-08-14");
+    }));
 });
 
 describe("advance payments", () => {
