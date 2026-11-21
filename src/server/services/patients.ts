@@ -11,7 +11,12 @@ import type { DbExecutor } from "@/server/db/client";
 import { patientAppointments, notesForPatient } from "@/server/db/queries/appointments";
 import { writeAudit } from "@/server/db/queries/audit";
 import { attendanceByPatient, owedByPatient } from "@/server/db/queries/balances";
-import { creditBalance, creditEntries } from "@/server/db/queries/billing";
+import {
+  creditBalance,
+  creditEntries,
+  debtBalance,
+  debtEntries,
+} from "@/server/db/queries/billing";
 import {
   getPatient,
   isPatientOfStaff,
@@ -100,8 +105,8 @@ export async function getPatientRecord(db: DbExecutor, actor: Actor, patientId: 
 }
 
 /**
- * Everything the patient detail panel shows. Credit is only loaded for roles
- * that may see it; therapists get null.
+ * Everything the patient detail panel shows. Credit and debt are only loaded
+ * for roles that may see money; therapists get null.
  */
 export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: string) {
   const record = await getPatientRecord(db, actor, patientId);
@@ -109,7 +114,7 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
   const staffIds = [record.patient.primaryStaffId, ...record.backupStaffIds].filter(
     Boolean,
   ) as string[];
-  const [staffRows, history, notes, credit, treats] = await Promise.all([
+  const [staffRows, history, notes, credit, debt, treats] = await Promise.all([
     staffIds.length
       ? db.select().from(staff).where(inArray(staff.id, staffIds))
       : Promise.resolve([]),
@@ -118,6 +123,11 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
     actor.role === "therapist"
       ? Promise.resolve(null)
       : Promise.all([creditBalance(db, patientId), creditEntries(db, patientId)]).then(
+          ([balance, entries]) => ({ balance, entries }),
+        ),
+    actor.role === "therapist"
+      ? Promise.resolve(null)
+      : Promise.all([debtBalance(db, patientId), debtEntries(db, patientId)]).then(
           ([balance, entries]) => ({ balance, entries }),
         ),
     actor.role === "therapist" ? treatsPatient(db, actor, patientId) : Promise.resolve(false),
@@ -131,6 +141,7 @@ export async function getPatientDetail(db: DbExecutor, actor: Actor, patientId: 
     history,
     notes,
     credit,
+    debt,
     /** A therapist may edit the details of patients they treat; the desk edits anyone. */
     canEditDetails: can(actor, "patient:edit", {
       branchId: record.patient.branchId,

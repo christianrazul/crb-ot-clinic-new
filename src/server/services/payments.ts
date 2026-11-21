@@ -4,13 +4,14 @@ import { addDays, format, parseISO } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { fromManilaLocal, toManilaIsoDate } from "@/lib/dates";
+import { formatManila, fromManilaLocal, toManilaIsoDate } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import { quotePayment } from "@/lib/payment";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-methods";
 import type { ServiceKey } from "@/lib/services";
 import {
   collectPaymentInput,
+  debtPaymentInput,
   lowCreditThresholdInput,
   topUpInput,
 } from "@/lib/validation/payments";
@@ -22,7 +23,9 @@ import { writeAudit } from "@/server/db/queries/audit";
 import { owedByPatient } from "@/server/db/queries/balances";
 import {
   creditBalance,
+  debtBalance,
   liveCredit,
+  liveDebt,
   livePayment,
   takeReceiptNumber,
 } from "@/server/db/queries/billing";
@@ -30,6 +33,7 @@ import {
   appointments,
   branches,
   creditLedger,
+  debtLedger,
   patients,
   payments,
   rateClasses,
@@ -104,14 +108,18 @@ async function balancesFor(db: DbExecutor, patientIds: string[]) {
   return new Map(rows.map((r) => [r.patientId, Number(r.total)]));
 }
 
+/** e.g. "Cash", "Credit + GCash", "Cash + Debt" or just "Debt". */
 export function paymentMethodLabel(p: {
   method: keyof typeof PAYMENT_METHOD_LABELS | null;
   creditAppliedCentavos: number;
+  debtCentavos: number;
 }) {
-  if (!p.method) return "Credit";
-  return p.creditAppliedCentavos > 0
-    ? `Credit + ${PAYMENT_METHOD_LABELS[p.method]}`
-    : PAYMENT_METHOD_LABELS[p.method];
+  const parts = [
+    p.creditAppliedCentavos > 0 && "Credit",
+    p.method && PAYMENT_METHOD_LABELS[p.method],
+    p.debtCentavos > 0 && "Debt",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" + ") : "Credit";
 }
 
 /** The billing screen for one day: sessions that started or were paid, and the four totals. */
@@ -181,12 +189,16 @@ export async function getBillingDay(
     methodLabel: r.payment ? paymentMethodLabel(r.payment) : null,
     receiptNo: r.payment?.receiptNo ?? null,
     paymentId: r.payment?.id ?? null,
+    /** The part of this session left on the patient's tab. */
+    debtCentavos: r.payment?.debtCentavos ?? 0,
     creditCentavos: balances.get(r.patientId) ?? 0,
   }));
   return {
     items,
     totals: {
-      collectedCentavos: items.filter((i) => i.paid).reduce((sum, i) => sum + i.feeCentavos, 0),
+      collectedCentavos: items
+        .filter((i) => i.paid)
+        .reduce((sum, i) => sum + i.feeCentavos - i.debtCentavos, 0),
       pendingCentavos: items.filter((i) => !i.paid).reduce((sum, i) => sum + i.feeCentavos, 0),
       paidCount: items.filter((i) => i.paid).length,
       outstandingCentavos: owedValues.reduce((sum, v) => sum + v, 0),
@@ -231,6 +243,8 @@ export async function getPaymentContext(db: DbExecutor, actor: Actor, appointmen
     staffName: row.staffName,
     alreadyPaid: Boolean(row.paymentId),
     creditBalanceCentavos: await creditBalance(db, row.appointment.patientId),
+    /** What they already owe on their tab, so the desk knows before adding to it. */
+    debtBalanceCentavos: await debtBalance(db, row.appointment.patientId),
     /** The form's "received on" defaults to today; backlogging picks an earlier day. */
     today: clinicToday(),
     receivedOn: clinicToday(),
@@ -246,6 +260,7 @@ type CorrectionInfo = {
   receiptNo: string;
   methodLabel: string;
   creditAppliedCentavos: number;
+  debtCentavos: number;
 };
 
 /**
@@ -266,11 +281,13 @@ export async function getPaymentCorrectionContext(
     alreadyPaid: false,
     receivedOn: toManilaIsoDate(payment.createdAt),
     creditBalanceCentavos: context.creditBalanceCentavos + payment.creditAppliedCentavos,
+    debtBalanceCentavos: Math.max(0, context.debtBalanceCentavos - payment.debtCentavos),
     correcting: {
       paymentId: payment.id,
       receiptNo: payment.receiptNo,
       methodLabel: paymentMethodLabel(payment),
       creditAppliedCentavos: payment.creditAppliedCentavos,
+      debtCentavos: payment.debtCentavos,
     },
   };
 }
@@ -320,8 +337,16 @@ export async function collectPayment(
     creditBalanceCentavos: balance,
   });
   if (!quote.canConfirm) {
-    if (quote.shortByCentavos !== null)
-      throw new ValidationError("The cash received is less than what's due.");
+    if (quote.shortByCentavos !== null && !quote.debtCentavos)
+      throw new ValidationError(
+        input.method === "cash"
+          ? "The cash received is less than what's due."
+          : "The amount received is less than what's due. Mark the rest as debt, or enter the full amount.",
+      );
+    if (quote.overByCentavos !== null)
+      throw new ValidationError(
+        "The amount received is more than what's due. Record the extra as an advance payment.",
+      );
     if (quote.needsMethod && input.method !== "cash")
       throw new ValidationError("Enter the reference number for this payment.");
     throw new ValidationError("Enter the cash received or choose another method.");
@@ -329,6 +354,8 @@ export async function collectPayment(
 
   const receivedTime = receivedAt(input.receivedOn);
   const receiptNo = await takeReceiptNumber(db, appointment.branchId);
+  // No method when nothing was paid in money: credit and debt cover it all.
+  const paidMoney = quote.paidNowCentavos > 0;
   const [payment] = await db
     .insert(payments)
     .values({
@@ -337,10 +364,11 @@ export async function collectPayment(
       branchId: appointment.branchId,
       amountCentavos: appointment.feeCentavos,
       creditAppliedCentavos: quote.creditAppliedCentavos,
-      method: quote.needsMethod ? input.method : null,
-      referenceNo: quote.needsMethod && input.method !== "cash" ? input.referenceNo : null,
+      debtCentavos: quote.debtCentavos,
+      method: paidMoney ? input.method : null,
+      referenceNo: paidMoney && input.method !== "cash" ? input.referenceNo : null,
       cashReceivedCentavos:
-        quote.needsMethod && input.method === "cash" ? input.cashReceivedCentavos : null,
+        paidMoney && input.method === "cash" ? input.cashReceivedCentavos : null,
       receiptNo,
       receivedByUserId: actor.userId,
       replacesPaymentId: options.replacesPaymentId ?? null,
@@ -348,22 +376,37 @@ export async function collectPayment(
     })
     .returning();
 
-  if (quote.creditAppliedCentavos > 0) {
+  if (quote.creditAppliedCentavos > 0 || quote.debtCentavos > 0) {
     const [details] = await db
       .select({ typeName: sessionTypes.name, staffName: staff.shortName })
       .from(sessionTypes)
       .innerJoin(staff, eq(staff.id, appointment.staffId))
       .where(eq(sessionTypes.id, appointment.sessionTypeId));
-    await db.insert(creditLedger).values({
-      patientId: appointment.patientId,
-      type: "deduction",
-      amountCentavos: -quote.creditAppliedCentavos,
-      description: `${details?.typeName ?? "Session"}, ${details?.staffName ?? ""}`,
-      receiptNo,
-      relatedPaymentId: payment!.id,
-      createdByUserId: actor.userId,
-      createdAt: receivedTime,
-    });
+    const description = `${details?.typeName ?? "Session"}, ${details?.staffName ?? ""}`;
+    if (quote.creditAppliedCentavos > 0) {
+      await db.insert(creditLedger).values({
+        patientId: appointment.patientId,
+        type: "deduction",
+        amountCentavos: -quote.creditAppliedCentavos,
+        description,
+        receiptNo,
+        relatedPaymentId: payment!.id,
+        createdByUserId: actor.userId,
+        createdAt: receivedTime,
+      });
+    }
+    if (quote.debtCentavos > 0) {
+      await db.insert(debtLedger).values({
+        patientId: appointment.patientId,
+        type: "charge",
+        amountCentavos: quote.debtCentavos,
+        description: `${description}, ${formatManila(appointment.startsAt, "date")}`,
+        receiptNo,
+        relatedPaymentId: payment!.id,
+        createdByUserId: actor.userId,
+        createdAt: receivedTime,
+      });
+    }
   }
   await writeAudit(db, {
     actorUserId: actor.userId,
@@ -374,6 +417,7 @@ export async function collectPayment(
       appointmentId: appointment.id,
       amount: appointment.feeCentavos,
       credit: quote.creditAppliedCentavos,
+      debt: quote.debtCentavos,
       method: payment!.method,
       receiptNo,
     },
@@ -385,6 +429,10 @@ export async function collectPayment(
     receiptNo,
     methodLabel: quote.methodLabel,
     changeCentavos: quote.changeCentavos,
+    paidNowCentavos: quote.paidNowCentavos,
+    debtCentavos: quote.debtCentavos,
+    debtBalanceAfterCentavos:
+      quote.debtCentavos > 0 ? await debtBalance(db, appointment.patientId) : null,
     creditBalanceAfterCentavos: balanceAfter,
     lowCredit: quote.creditAppliedCentavos > 0 && balanceAfter < threshold,
   };
@@ -489,8 +537,9 @@ async function lockedPayment(db: DbExecutor, actor: Actor, paymentId: string) {
 }
 
 /**
- * Voids a payment: the session shows as unpaid again and any credit it used
- * goes back to the patient's balance. The receipt number stays used (voided).
+ * Voids a payment: the session shows as unpaid again, any credit it used goes
+ * back to the patient's balance, and any debt it left comes off their tab. The
+ * receipt number stays used (voided).
  */
 export async function voidPayment(
   db: DbExecutor,
@@ -500,6 +549,24 @@ export async function voidPayment(
   const payment = await lockedPayment(db, actor, input.paymentId);
   const reason = reasonInput.parse(input.reason);
   const voided = { voidedAt: clinicNow(), voidedByUserId: actor.userId, voidReason: reason };
+  if (payment.debtCentavos > 0) {
+    // Lock the patient so the debt check can't race a debt payment.
+    await db
+      .select({ id: patients.id })
+      .from(patients)
+      .where(eq(patients.id, payment.patientId))
+      .for("update");
+    const after = (await debtBalance(db, payment.patientId)) - payment.debtCentavos;
+    if (after < 0) {
+      throw new ValidationError(
+        `Some of this session's debt was already paid off, so voiding it would leave the tab at ${formatPeso(after)}. Void that debt payment on the patient's Debt tab first.`,
+      );
+    }
+    await db
+      .update(debtLedger)
+      .set(voided)
+      .where(and(eq(debtLedger.relatedPaymentId, payment.id), liveDebt));
+  }
   await db.update(payments).set(voided).where(eq(payments.id, payment.id));
   // The credit it spent comes back.
   await db
@@ -511,7 +578,11 @@ export async function voidPayment(
     action: "payment.void",
     entity: "payment",
     entityId: payment.id,
-    before: { receiptNo: payment.receiptNo, amount: payment.amountCentavos },
+    before: {
+      receiptNo: payment.receiptNo,
+      amount: payment.amountCentavos,
+      debt: payment.debtCentavos,
+    },
     after: { reason },
     ip: actor.ip,
   });
@@ -659,4 +730,105 @@ export async function adjustCredit(db: DbExecutor, actor: Actor, raw: unknown) {
     ip: actor.ip,
   });
   return { balanceCentavos: after };
+}
+
+// --- Debt (D-129). A session paid in part leaves a charge on the patient's
+// tab; money received later is a settlement. Same append-only rules as credit.
+
+/** Records money received against a patient's debt, with its own receipt. */
+export async function recordDebtPayment(db: DbExecutor, actor: Actor, raw: unknown) {
+  const input = debtPaymentInput.parse(raw);
+  const [patient] = await db
+    .select()
+    .from(patients)
+    .where(eq(patients.id, input.patientId))
+    .for("update");
+  if (!patient || patient.deletedAt) throw new NotFoundError();
+  assertCan(actor, "payment:collect", { branchId: patient.branchId });
+  const owed = await debtBalance(db, patient.id);
+  if (owed <= 0) throw new ValidationError(`${patient.firstName} has no debt to pay off.`);
+  if (input.amountCentavos > owed) {
+    throw new ValidationError(
+      `That's more than ${patient.firstName} owes (${formatPeso(owed)}). Record the extra as an advance payment instead.`,
+    );
+  }
+  const receiptNo = input.receiptNo || (await takeReceiptNumber(db, patient.branchId));
+  const [entry] = await db
+    .insert(debtLedger)
+    .values({
+      patientId: patient.id,
+      type: "settlement",
+      amountCentavos: -input.amountCentavos,
+      description: input.amountCentavos === owed ? "Debt paid in full" : "Debt payment",
+      method: input.method,
+      referenceNo: input.method === "cash" ? null : input.referenceNo,
+      receiptNo,
+      notes: input.notes || null,
+      createdByUserId: actor.userId,
+      createdAt: receivedAt(input.receivedOn),
+    })
+    .returning();
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "debt.settle",
+    entity: "debt_ledger",
+    entityId: entry!.id,
+    after: { patientId: patient.id, amount: input.amountCentavos, method: input.method, receiptNo },
+    ip: actor.ip,
+  });
+  return {
+    receiptNo,
+    debtBalanceCentavos: owed - input.amountCentavos,
+    patientName: `${patient.firstName} ${patient.lastName}`,
+  };
+}
+
+/** What a patient owes on their tab, for the debt payment dialog. */
+export async function getDebtBalance(db: DbExecutor, actor: Actor, patientId: string) {
+  const [patient] = await db.select().from(patients).where(eq(patients.id, patientId));
+  if (!patient || patient.deletedAt) throw new NotFoundError();
+  assertCan(actor, "credit:read", { branchId: patient.branchId });
+  return debtBalance(db, patientId);
+}
+
+/**
+ * Voids a debt payment (a settlement): the amount goes back on the tab. A
+ * charge comes from a session payment, so it is corrected by voiding or
+ * editing that payment instead.
+ */
+export async function voidDebtEntry(
+  db: DbExecutor,
+  actor: Actor,
+  input: { entryId: string; reason: unknown },
+) {
+  const [row] = await db
+    .select({ entry: debtLedger, branchId: patients.branchId })
+    .from(debtLedger)
+    .innerJoin(patients, eq(debtLedger.patientId, patients.id))
+    .where(eq(debtLedger.id, input.entryId))
+    .for("update", { of: debtLedger });
+  if (!row) throw new NotFoundError();
+  assertCan(actor, "billing:correct", { branchId: row.branchId });
+  const entry = row.entry;
+  if (entry.voidedAt) throw new ValidationError("This entry was already voided.");
+  if (entry.type === "charge") {
+    throw new ValidationError(
+      "This debt came from a session payment. Void or edit that session's payment instead.",
+    );
+  }
+  const reason = reasonInput.parse(input.reason);
+  await db
+    .update(debtLedger)
+    .set({ voidedAt: clinicNow(), voidedByUserId: actor.userId, voidReason: reason })
+    .where(eq(debtLedger.id, entry.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "debt.void",
+    entity: "debt_ledger",
+    entityId: entry.id,
+    before: { type: entry.type, amount: entry.amountCentavos, receiptNo: entry.receiptNo },
+    after: { reason },
+    ip: actor.ip,
+  });
+  return entry;
 }

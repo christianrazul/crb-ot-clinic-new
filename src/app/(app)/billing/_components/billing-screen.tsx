@@ -220,12 +220,21 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
                   <TableCell className="text-right">
                     {item.paid ? (
                       <span className="inline-flex items-center gap-1">
-                        <Badge
-                          variant="success"
-                          title={item.receiptNo ? `Receipt ${item.receiptNo}` : undefined}
-                        >
-                          <Check /> Paid
-                        </Badge>
+                        {item.debtCentavos > 0 ? (
+                          <Badge
+                            variant="warning"
+                            title={`${formatPeso(item.debtCentavos)} on the patient's tab${item.receiptNo ? `, receipt ${item.receiptNo}` : ""}`}
+                          >
+                            Owes {formatPeso(item.debtCentavos)}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="success"
+                            title={item.receiptNo ? `Receipt ${item.receiptNo}` : undefined}
+                          >
+                            <Check /> Paid
+                          </Badge>
+                        )}
                         {item.paymentId && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

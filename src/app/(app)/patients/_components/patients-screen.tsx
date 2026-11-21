@@ -305,7 +305,11 @@ export function PatientsScreen({
           <PatientDetail
             key={detail.patient.id}
             detail={detail}
-            tab={params.tab === "credit" && !data.canSeeMoney ? "overview" : params.tab}
+            tab={
+              (params.tab === "credit" || params.tab === "debt") && !data.canSeeMoney
+                ? "overview"
+                : params.tab
+            }
             onTabChange={(tab) => setParams({ tab })}
             canWrite={data.canWrite}
             canEdit={detail.canEditDetails}

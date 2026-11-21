@@ -6,6 +6,7 @@ import { useViewer } from "@/components/app/shell/viewer-context";
 
 import { AdvancePaymentDialog, type TopUpCorrection } from "./advance-payment-dialog";
 import { type BookingDraft, BookingDialog } from "./booking-dialog";
+import { DebtPaymentDialog } from "./debt-payment-dialog";
 import { HistoryDialog } from "./history-dialog";
 import { PaymentDialog } from "./payment-dialog";
 import { SessionDialog } from "./session-dialog";
@@ -23,6 +24,7 @@ export type DialogRequest =
       patient?: { id: string; name: string; service: ServiceKey };
       correcting?: TopUpCorrection;
     }
+  | { kind: "debt-payment"; patient: { id: string; name: string; service: ServiceKey } }
   | { kind: "history"; appointmentId: string };
 
 type DialogsApi = { openDialog: (request: DialogRequest) => void; closeDialog: () => void };
@@ -99,6 +101,9 @@ export function DialogHost({ children, today }: { children: React.ReactNode; tod
           correcting={request.correcting}
           today={today}
         />
+      )}
+      {request?.kind === "debt-payment" && viewer.role !== "therapist" && (
+        <DebtPaymentDialog key={key} {...shared} patient={request.patient} today={today} />
       )}
       {request?.kind === "history" && (
         <HistoryDialog key={key} {...shared} appointmentId={request.appointmentId} />

@@ -14,7 +14,7 @@ import {
 import { users } from "./auth";
 import { branches, patients } from "./clinic";
 import { createdAt, id } from "./columns";
-import { creditEntryTypeEnum, paymentMethodEnum } from "./enums";
+import { creditEntryTypeEnum, debtEntryTypeEnum, paymentMethodEnum } from "./enums";
 import { appointments } from "./scheduling";
 
 /**
@@ -37,7 +37,9 @@ export const payments = pgTable(
       .references(() => branches.id),
     amountCentavos: integer().notNull(),
     creditAppliedCentavos: integer().notNull().default(0),
-    /** Null when credit covered the whole fee. */
+    /** The part left unpaid and put on the patient's tab (D-129). */
+    debtCentavos: integer().notNull().default(0),
+    /** Null when credit and debt cover the whole fee, so no money changed hands. */
     method: paymentMethodEnum(),
     referenceNo: text(),
     cashReceivedCentavos: integer(),
@@ -61,15 +63,15 @@ export const payments = pgTable(
     index().on(t.receivedByUserId),
     check(
       "payments_amounts",
-      sql`${t.amountCentavos} >= 0 and ${t.creditAppliedCentavos} between 0 and ${t.amountCentavos}`,
+      sql`${t.amountCentavos} >= 0 and ${t.creditAppliedCentavos} >= 0 and ${t.debtCentavos} >= 0 and ${t.creditAppliedCentavos} + ${t.debtCentavos} <= ${t.amountCentavos}`,
     ),
     check(
       "payments_method_when_due",
-      sql`(${t.creditAppliedCentavos} = ${t.amountCentavos}) or ${t.method} is not null`,
+      sql`(${t.creditAppliedCentavos} + ${t.debtCentavos} = ${t.amountCentavos}) or ${t.method} is not null`,
     ),
     check(
       "payments_cash_covers",
-      sql`${t.method} <> 'cash' or ${t.cashReceivedCentavos} >= ${t.amountCentavos} - ${t.creditAppliedCentavos}`,
+      sql`${t.method} <> 'cash' or ${t.cashReceivedCentavos} >= ${t.amountCentavos} - ${t.creditAppliedCentavos} - ${t.debtCentavos}`,
     ),
     check(
       "payments_reference_for_non_cash",
@@ -118,6 +120,51 @@ export const creditLedger = pgTable(
     check(
       "credit_ledger_top_up_reference",
       sql`${t.type} <> 'top_up' or ${t.method} = 'cash' or length(trim(coalesce(${t.referenceNo}, ''))) > 0`,
+    ),
+  ],
+);
+
+/**
+ * Debt: what a patient owes on their tab. A charge is the unpaid part of a
+ * session's payment; a settlement is money received against it. The balance is
+ * always the sum of the live rows and never goes below zero. Append-only apart
+ * from a one-time void (D-121, D-129).
+ */
+export const debtLedger = pgTable(
+  "debt_ledger",
+  {
+    id: id(),
+    patientId: text()
+      .notNull()
+      .references(() => patients.id),
+    type: debtEntryTypeEnum().notNull(),
+    amountCentavos: integer().notNull(),
+    description: text().notNull(),
+    method: paymentMethodEnum(),
+    referenceNo: text(),
+    receiptNo: text().notNull(),
+    notes: text(),
+    /** The session payment that left this debt (charges only). */
+    relatedPaymentId: text().references(() => payments.id),
+    createdByUserId: text()
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    voidedAt: timestamp({ withTimezone: true, mode: "date" }),
+    voidedByUserId: text().references(() => users.id),
+    voidReason: text(),
+  },
+  (t) => [
+    index().on(t.patientId, t.createdAt),
+    index().on(t.relatedPaymentId),
+    index().on(t.createdByUserId),
+    check(
+      "debt_ledger_sign",
+      sql`(${t.type} = 'charge' and ${t.amountCentavos} > 0 and ${t.relatedPaymentId} is not null) or (${t.type} = 'settlement' and ${t.amountCentavos} < 0 and ${t.method} is not null)`,
+    ),
+    check(
+      "debt_ledger_settlement_reference",
+      sql`${t.type} <> 'settlement' or ${t.method} = 'cash' or length(trim(coalesce(${t.referenceNo}, ''))) > 0`,
     ),
   ],
 );

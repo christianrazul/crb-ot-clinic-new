@@ -3,15 +3,34 @@ import "server-only";
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
-import { appointments, payments } from "../schema";
-import { livePayment } from "./billing";
+import { appointments, debtLedger, payments } from "../schema";
+import { liveDebt, livePayment } from "./billing";
+
+/** Debt on each patient's tab: the sum of their live debt rows (D-129). */
+export async function debtByPatient(db: DbExecutor, patientIds: string[]) {
+  if (!patientIds.length) return new Map<string, number>();
+  const rows = await db
+    .select({
+      patientId: debtLedger.patientId,
+      total: sql<string>`sum(${debtLedger.amountCentavos})`,
+    })
+    .from(debtLedger)
+    .where(and(inArray(debtLedger.patientId, patientIds), liveDebt))
+    .groupBy(debtLedger.patientId);
+  return new Map(
+    rows.filter((r) => Number(r.total) > 0).map((r) => [r.patientId, Number(r.total)]),
+  );
+}
 
 /**
- * What each patient owes: attended sessions before `before` with no payment.
- * Today's unpaid sessions are "pending" at the desk, not owed yet.
+ * What each patient owes: attended sessions before `before` with no payment,
+ * plus their debt (sessions paid in part, the rest on their tab). Today's
+ * unpaid sessions are "pending" at the desk, not owed yet. A session marked as
+ * debt has a payment, so it is never counted twice.
  */
 export async function owedByPatient(db: DbExecutor, patientIds: string[], before: Date) {
   if (!patientIds.length) return new Map<string, number>();
+  const debt = await debtByPatient(db, patientIds);
   const rows = await db
     .select({
       patientId: appointments.patientId,
@@ -28,7 +47,9 @@ export async function owedByPatient(db: DbExecutor, patientIds: string[], before
       ),
     )
     .groupBy(appointments.patientId);
-  return new Map(rows.map((r) => [r.patientId, Number(r.owed)]));
+  const owed = new Map(debt);
+  for (const r of rows) owed.set(r.patientId, (owed.get(r.patientId) ?? 0) + Number(r.owed));
+  return owed;
 }
 
 /** Attendance rate per patient: attended out of sessions held or missed before `before`. */

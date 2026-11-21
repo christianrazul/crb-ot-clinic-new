@@ -3,14 +3,16 @@ import "server-only";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import type { DbExecutor } from "../client";
-import { creditLedger, payments, receiptCounters, branches } from "../schema";
+import { creditLedger, debtLedger, payments, receiptCounters, branches } from "../schema";
 
 /** Voided payments and credit entries stay on record but count for nothing (D-121). */
 export const livePayment = isNull(payments.voidedAt);
 export const liveCredit = isNull(creditLedger.voidedAt);
+export const liveDebt = isNull(debtLedger.voidedAt);
 
 export type PaymentRow = typeof payments.$inferSelect;
 export type CreditEntryRow = typeof creditLedger.$inferSelect;
+export type DebtEntryRow = typeof debtLedger.$inferSelect;
 
 /** The balance is always the sum of the live ledger rows. */
 export async function creditBalance(db: DbExecutor, patientId: string): Promise<number> {
@@ -28,6 +30,27 @@ export function creditEntries(db: DbExecutor, patientId: string) {
     .from(creditLedger)
     .where(eq(creditLedger.patientId, patientId))
     .orderBy(asc(creditLedger.createdAt), asc(creditLedger.id));
+}
+
+/** What the patient owes on their tab: the sum of the live debt rows (D-129). */
+export async function debtBalance(db: DbExecutor, patientId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${debtLedger.amountCentavos}), 0)` })
+    .from(debtLedger)
+    .where(and(eq(debtLedger.patientId, patientId), liveDebt));
+  return Number(row?.total ?? 0);
+}
+
+/** Debt rows oldest first, voided ones included. */
+export function debtEntries(db: DbExecutor, patientId: string) {
+  return (
+    db
+      .select()
+      .from(debtLedger)
+      .where(eq(debtLedger.patientId, patientId))
+      // At the same moment, a session's charge comes before money paid against it.
+      .orderBy(asc(debtLedger.createdAt), asc(debtLedger.type), asc(debtLedger.id))
+  );
 }
 
 export async function paymentForAppointment(db: DbExecutor, appointmentId: string) {
