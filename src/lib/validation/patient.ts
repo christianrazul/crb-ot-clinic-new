@@ -55,6 +55,6 @@ export const patientListParams = z.object({
   sort: z.enum(["name", "age", "attendance", "balance"]).catch("name"),
   page: z.coerce.number().int().min(0).max(10_000).catch(0),
   patient: z.string().max(64).optional().catch(undefined),
-  tab: z.enum(["overview", "sessions", "credit"]).catch("overview"),
+  tab: z.enum(["overview", "sessions", "credit", "debt"]).catch("overview"),
 });
 export type PatientListParams = z.output<typeof patientListParams>;

@@ -30,3 +30,6 @@ export const creditEntryTypeEnum = pgEnum("credit_entry_type", [
   "deduction",
   "adjustment",
 ]);
+
+/** Debt ("on tab"): a charge is the unpaid part of a session; a settlement pays it down. */
+export const debtEntryTypeEnum = pgEnum("debt_entry_type", ["charge", "settlement"]);

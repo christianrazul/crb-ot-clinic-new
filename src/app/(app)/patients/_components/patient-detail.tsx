@@ -11,6 +11,7 @@ import {
   HandCoins,
   Mail,
   MoreHorizontal,
+  NotebookPen,
   Pencil,
   Phone,
   Plus,
@@ -24,7 +25,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { EmptyState, Field } from "@/components/app/detail-bits";
-import { voidCreditEntryAction } from "@/app/(app)/billing/actions";
+import { voidCreditEntryAction, voidDebtEntryAction } from "@/app/(app)/billing/actions";
 import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { ReasonDialog } from "@/components/app/dialogs/reason-dialog";
 import { PatientAvatar } from "@/components/app/patient-avatar";
@@ -74,7 +75,7 @@ import { anonymizePatientAction, deletePatientAction, setPatientStatusAction } f
 import { AdjustCreditDialog } from "./adjust-credit-dialog";
 import { PatientFormDialog, type StaffOption } from "./patient-form-dialog";
 
-export type PatientTab = "overview" | "sessions" | "credit";
+export type PatientTab = "overview" | "sessions" | "credit" | "debt";
 
 const HISTORY_PAGE_SIZE = 6;
 const OT_SESSION_CENTAVOS = 70_000;
@@ -119,6 +120,11 @@ export function PatientDetail({
     description: string;
     amountCentavos: number;
   } | null>(null);
+  const [voidingDebt, setVoidingDebt] = React.useState<{
+    id: string;
+    description: string;
+    amountCentavos: number;
+  } | null>(null);
   const [typedName, setTypedName] = React.useState("");
   const [anonymizeError, setAnonymizeError] = React.useState<string | null>(null);
   const isOwner = useViewer().role === "superadmin";
@@ -148,6 +154,21 @@ export function PatientDetail({
       ).reverse()
     : [];
   const sessionsLeft = Math.floor(balance / OT_SESSION_CENTAVOS);
+  const debt = detail.debt?.balance ?? 0;
+  const debtLedger = detail.debt
+    ? withRunningBalance(
+        detail.debt.entries.map((e) => ({
+          ...e,
+          createdAt: new Date(e.createdAt).toISOString(),
+        })),
+      ).reverse()
+    : [];
+  const sessionsOnTab = debtLedger.filter((e) => e.type === "charge" && !e.voidedAt).length;
+  const openDebtPayment = () =>
+    openDialog({
+      kind: "debt-payment",
+      patient: { id: patient.id, name, service: patient.service },
+    });
 
   const toggleActive = () =>
     startTransition(async () => {
@@ -197,6 +218,15 @@ export function PatientDetail({
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <Badge variant={active ? "success" : "muted"}>{active ? "Active" : "Inactive"}</Badge>
+            {canSeeMoney && debt > 0 && (
+              <button
+                type="button"
+                className="rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                onClick={() => onTabChange("debt")}
+              >
+                <Badge variant="danger">Owes {formatPeso(debt)}</Badge>
+              </button>
+            )}
             {patient.services.map((key) => (
               <Badge key={key} variant="outline">
                 <SvcDot service={key} />
@@ -259,6 +289,11 @@ export function PatientDetail({
                   <HandCoins /> Record advance
                 </DropdownMenuItem>
               )}
+              {canSeeMoney && debt > 0 && (
+                <DropdownMenuItem onSelect={openDebtPayment}>
+                  <NotebookPen /> Record debt payment
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={toggleActive}>
                 <UserX /> {active ? "Set inactive" : "Set active"}
@@ -309,6 +344,16 @@ export function PatientDetail({
                 {balance > 0 && (
                   <span className="ml-1 rounded bg-accent px-1 text-[11px] font-semibold text-accent-foreground tabular-nums">
                     {formatPeso(balance)}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
+            {canSeeMoney && (
+              <TabsTrigger value="debt" className="flex-1">
+                Debt
+                {debt > 0 && (
+                  <span className="ml-1 rounded bg-danger-soft px-1 text-[11px] font-semibold text-danger-strong tabular-nums">
+                    {formatPeso(debt)}
                   </span>
                 )}
               </TabsTrigger>
@@ -652,6 +697,141 @@ export function PatientDetail({
             )}
           </TabsContent>
         )}
+
+        {canSeeMoney && (
+          <TabsContent value="debt" className="pt-4">
+            <div
+              className={cn(
+                "mx-5 flex items-center gap-4 rounded-lg border p-4",
+                debt > 0 ? "border-danger/30 bg-danger-soft/40" : "bg-muted/40",
+              )}
+            >
+              <div>
+                <div className="text-xs text-muted-foreground">Owes</div>
+                <div
+                  className={cn(
+                    "text-2xl font-semibold tracking-tight tabular-nums",
+                    debt > 0 && "text-danger",
+                  )}
+                >
+                  {formatPeso(debt)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {debt > 0
+                    ? `From ${sessionsOnTab} session${sessionsOnTab === 1 ? "" : "s"} not paid in full`
+                    : "Nothing owed"}
+                </div>
+              </div>
+              <div className="ml-auto">
+                <Button size="sm" disabled={debt <= 0} onClick={openDebtPayment}>
+                  <HandCoins /> Record payment
+                </Button>
+              </div>
+            </div>
+            {debtLedger.length ? (
+              <div className="mt-3">
+                {debtLedger.map((entry) => {
+                  const isCharge = entry.type === "charge";
+                  const voided = Boolean(entry.voidedAt);
+                  return (
+                    <div
+                      key={entry.id}
+                      className={cn(
+                        "flex gap-3 border-t px-5 py-3 first:border-t-0",
+                        voided && "opacity-60",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
+                          isCharge
+                            ? "bg-danger-soft text-danger-strong"
+                            : "bg-success-soft text-success-strong",
+                        )}
+                        aria-hidden
+                      >
+                        {isCharge ? (
+                          <NotebookPen className="size-3.5" />
+                        ) : (
+                          <HandCoins className="size-3.5" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span
+                            className={cn("truncate text-sm font-medium", voided && "line-through")}
+                          >
+                            {entry.description}
+                          </span>
+                          {voided && <Badge variant="muted">Voided</Badge>}
+                          <span
+                            className={cn(
+                              "ml-auto text-sm font-semibold whitespace-nowrap tabular-nums",
+                              !voided && (isCharge ? "text-danger" : "text-success-strong"),
+                              voided && "line-through",
+                            )}
+                          >
+                            {isCharge
+                              ? `+${formatPeso(entry.amountCentavos)}`
+                              : formatPeso(entry.amountCentavos)}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-baseline gap-2 text-xs text-muted-foreground">
+                          <span className="tabular-nums">
+                            {formatManila(new Date(entry.createdAt), "date")}, receipt{" "}
+                            {entry.receiptNo}
+                            {entry.referenceNo ? `, ref ${entry.referenceNo}` : ""}
+                          </span>
+                          <span className="ml-auto whitespace-nowrap tabular-nums">
+                            Owes {formatPeso(entry.balanceAfterCentavos)}
+                          </span>
+                        </div>
+                        {entry.notes && (
+                          <p className="mt-2 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+                            {entry.notes}
+                          </p>
+                        )}
+                        {voided && entry.voidReason && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            Voided {formatManila(new Date(entry.voidedAt!), "date")}:{" "}
+                            {entry.voidReason}
+                          </p>
+                        )}
+                      </div>
+                      {!voided && !isCharge && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="-mr-2 text-muted-foreground"
+                              aria-label={`Actions for ${entry.description} ${formatManila(new Date(entry.createdAt), "date")}`}
+                            >
+                              <MoreHorizontal />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem
+                              className="text-danger focus:text-danger"
+                              onSelect={() => setVoidingDebt(entry)}
+                            >
+                              <Ban /> Void
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                title={`${patient.firstName} has never had a debt.`}
+                description="When cash comes up short at the desk, the collect payment dialog can mark the rest as debt."
+              />
+            )}
+          </TabsContent>
+        )}
       </Tabs>
 
       {editing && (
@@ -680,6 +860,19 @@ export function PatientDetail({
           onConfirm={async (reason) => {
             const result = await voidCreditEntryAction(voidingEntry.id, reason);
             if (result.ok) toast.success("Entry voided");
+            return result.ok ? { ok: true } : result;
+          }}
+        />
+      )}
+      {voidingDebt && (
+        <ReasonDialog
+          title={`Void this ${formatPeso(Math.abs(voidingDebt.amountCentavos))} debt payment?`}
+          description={`It stays on the ledger, marked voided, and the ${formatPeso(Math.abs(voidingDebt.amountCentavos))} goes back on ${patient.firstName}'s tab.`}
+          confirmLabel="Void payment"
+          onClose={() => setVoidingDebt(null)}
+          onConfirm={async (reason) => {
+            const result = await voidDebtEntryAction(voidingDebt.id, reason);
+            if (result.ok) toast.success("Debt payment voided");
             return result.ok ? { ok: true } : result;
           }}
         />

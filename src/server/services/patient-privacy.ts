@@ -12,6 +12,7 @@ import {
   appointments,
   auditLog,
   creditLedger,
+  debtLedger,
   guardians,
   patients,
   payments,
@@ -36,69 +37,86 @@ export async function exportPatientData(db: DbExecutor, actor: Actor, patientId:
   const patient = await patientRow(db, patientId);
   assertCan(actor, "patient:export", { branchId: patient.branchId });
 
-  const [guardianRows, sessionRows, noteRows, paymentRows, ledgerRows] = await Promise.all([
-    db.select().from(guardians).where(eq(guardians.patientId, patientId)),
-    db
-      .select({
-        id: appointments.id,
-        startsAt: appointments.startsAt,
-        endsAt: appointments.endsAt,
-        status: appointments.status,
-        sessionType: sessionTypes.name,
-        staff: staff.displayName,
-        feeCentavos: appointments.feeCentavos,
-        isMakeUp: appointments.isMakeUp,
-      })
-      .from(appointments)
-      .innerJoin(sessionTypes, eq(appointments.sessionTypeId, sessionTypes.id))
-      .innerJoin(staff, eq(appointments.staffId, staff.id))
-      .where(eq(appointments.patientId, patientId))
-      .orderBy(asc(appointments.startsAt)),
-    db
-      .select({
-        id: sessionNotes.id,
-        appointmentId: sessionNotes.appointmentId,
-        author: staff.displayName,
-        body: sessionNotes.body,
-        version: sessionNotes.version,
-        supersedesId: sessionNotes.supersedesId,
-        createdAt: sessionNotes.createdAt,
-      })
-      .from(sessionNotes)
-      .innerJoin(staff, eq(sessionNotes.authorStaffId, staff.id))
-      .where(eq(sessionNotes.patientId, patientId))
-      .orderBy(asc(sessionNotes.createdAt)),
-    db
-      .select({
-        receiptNo: payments.receiptNo,
-        appointmentId: payments.appointmentId,
-        amountCentavos: payments.amountCentavos,
-        creditAppliedCentavos: payments.creditAppliedCentavos,
-        method: payments.method,
-        referenceNo: payments.referenceNo,
-        createdAt: payments.createdAt,
-        voidedAt: payments.voidedAt,
-        voidReason: payments.voidReason,
-      })
-      .from(payments)
-      .where(eq(payments.patientId, patientId))
-      .orderBy(asc(payments.createdAt)),
-    db
-      .select({
-        type: creditLedger.type,
-        amountCentavos: creditLedger.amountCentavos,
-        description: creditLedger.description,
-        method: creditLedger.method,
-        referenceNo: creditLedger.referenceNo,
-        receiptNo: creditLedger.receiptNo,
-        createdAt: creditLedger.createdAt,
-        voidedAt: creditLedger.voidedAt,
-        voidReason: creditLedger.voidReason,
-      })
-      .from(creditLedger)
-      .where(eq(creditLedger.patientId, patientId))
-      .orderBy(asc(creditLedger.createdAt)),
-  ]);
+  const [guardianRows, sessionRows, noteRows, paymentRows, ledgerRows, debtRows] =
+    await Promise.all([
+      db.select().from(guardians).where(eq(guardians.patientId, patientId)),
+      db
+        .select({
+          id: appointments.id,
+          startsAt: appointments.startsAt,
+          endsAt: appointments.endsAt,
+          status: appointments.status,
+          sessionType: sessionTypes.name,
+          staff: staff.displayName,
+          feeCentavos: appointments.feeCentavos,
+          isMakeUp: appointments.isMakeUp,
+        })
+        .from(appointments)
+        .innerJoin(sessionTypes, eq(appointments.sessionTypeId, sessionTypes.id))
+        .innerJoin(staff, eq(appointments.staffId, staff.id))
+        .where(eq(appointments.patientId, patientId))
+        .orderBy(asc(appointments.startsAt)),
+      db
+        .select({
+          id: sessionNotes.id,
+          appointmentId: sessionNotes.appointmentId,
+          author: staff.displayName,
+          body: sessionNotes.body,
+          version: sessionNotes.version,
+          supersedesId: sessionNotes.supersedesId,
+          createdAt: sessionNotes.createdAt,
+        })
+        .from(sessionNotes)
+        .innerJoin(staff, eq(sessionNotes.authorStaffId, staff.id))
+        .where(eq(sessionNotes.patientId, patientId))
+        .orderBy(asc(sessionNotes.createdAt)),
+      db
+        .select({
+          receiptNo: payments.receiptNo,
+          appointmentId: payments.appointmentId,
+          amountCentavos: payments.amountCentavos,
+          creditAppliedCentavos: payments.creditAppliedCentavos,
+          debtCentavos: payments.debtCentavos,
+          method: payments.method,
+          referenceNo: payments.referenceNo,
+          createdAt: payments.createdAt,
+          voidedAt: payments.voidedAt,
+          voidReason: payments.voidReason,
+        })
+        .from(payments)
+        .where(eq(payments.patientId, patientId))
+        .orderBy(asc(payments.createdAt)),
+      db
+        .select({
+          type: creditLedger.type,
+          amountCentavos: creditLedger.amountCentavos,
+          description: creditLedger.description,
+          method: creditLedger.method,
+          referenceNo: creditLedger.referenceNo,
+          receiptNo: creditLedger.receiptNo,
+          createdAt: creditLedger.createdAt,
+          voidedAt: creditLedger.voidedAt,
+          voidReason: creditLedger.voidReason,
+        })
+        .from(creditLedger)
+        .where(eq(creditLedger.patientId, patientId))
+        .orderBy(asc(creditLedger.createdAt)),
+      db
+        .select({
+          type: debtLedger.type,
+          amountCentavos: debtLedger.amountCentavos,
+          description: debtLedger.description,
+          method: debtLedger.method,
+          referenceNo: debtLedger.referenceNo,
+          receiptNo: debtLedger.receiptNo,
+          createdAt: debtLedger.createdAt,
+          voidedAt: debtLedger.voidedAt,
+          voidReason: debtLedger.voidReason,
+        })
+        .from(debtLedger)
+        .where(eq(debtLedger.patientId, patientId))
+        .orderBy(asc(debtLedger.createdAt)),
+    ]);
 
   await writeAudit(db, {
     actorUserId: actor.userId,
@@ -136,6 +154,7 @@ export async function exportPatientData(db: DbExecutor, actor: Actor, patientId:
     sessionNotes: noteRows,
     payments: paymentRows,
     creditLedger: ledgerRows,
+    debtLedger: debtRows,
   };
 }
 

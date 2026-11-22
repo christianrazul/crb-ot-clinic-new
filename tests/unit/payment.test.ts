@@ -90,3 +90,97 @@ describe("quotePayment", () => {
     expect(quote.dueNowCentavos).toBe(70_000);
   });
 });
+
+describe("quotePayment, marking a shortfall as debt (D-129)", () => {
+  it("offers debt only when cash comes up short", () => {
+    expect(quotePayment({ ...base, cashReceivedCentavos: 30_000 })).toMatchObject({
+      shortByCentavos: 40_000,
+      canMarkAsDebt: true,
+      canConfirm: false,
+      debtCentavos: 0,
+    });
+    expect(quotePayment({ ...base, cashReceivedCentavos: 70_000 }).canMarkAsDebt).toBe(false);
+    expect(quotePayment({ ...base, cashReceivedCentavos: null }).canMarkAsDebt).toBe(false);
+    // A transfer with no amount entered is the full amount.
+    expect(
+      quotePayment({ ...base, method: "gcash", referenceNo: "1", markAsDebt: true }),
+    ).toMatchObject({ canMarkAsDebt: false, debtCentavos: 0, canConfirm: true });
+  });
+
+  it("puts the shortfall on the tab and takes the cash", () => {
+    expect(quotePayment({ ...base, cashReceivedCentavos: 30_000, markAsDebt: true })).toMatchObject(
+      {
+        debtCentavos: 40_000,
+        paidNowCentavos: 30_000,
+        canConfirm: true,
+        methodLabel: "Cash + Debt",
+      },
+    );
+  });
+
+  it("can put the whole fee on the tab when nothing is paid", () => {
+    expect(quotePayment({ ...base, cashReceivedCentavos: 0, markAsDebt: true })).toMatchObject({
+      debtCentavos: 70_000,
+      paidNowCentavos: 0,
+      canConfirm: true,
+      methodLabel: "Debt",
+    });
+  });
+
+  it("applies credit first, then cash, then debt", () => {
+    expect(
+      quotePayment({
+        ...base,
+        creditBalanceCentavos: 20_000,
+        useCredit: true,
+        cashReceivedCentavos: 30_000,
+        markAsDebt: true,
+      }),
+    ).toMatchObject({
+      creditAppliedCentavos: 20_000,
+      paidNowCentavos: 30_000,
+      debtCentavos: 20_000,
+      methodLabel: "Credit + Cash + Debt",
+    });
+  });
+});
+
+describe("quotePayment, amounts for e-wallet, bank and card (D-129)", () => {
+  const gcash = { ...base, method: "gcash" as const, referenceNo: "0029" };
+
+  it("blocks a short transfer unless the rest is marked as debt", () => {
+    expect(quotePayment({ ...gcash, cashReceivedCentavos: 30_000 })).toMatchObject({
+      shortByCentavos: 40_000,
+      canMarkAsDebt: true,
+      canConfirm: false,
+    });
+    expect(
+      quotePayment({ ...gcash, cashReceivedCentavos: 30_000, markAsDebt: true }),
+    ).toMatchObject({
+      debtCentavos: 40_000,
+      paidNowCentavos: 30_000,
+      canConfirm: true,
+      methodLabel: "GCash + Debt",
+    });
+  });
+
+  it("still needs a reference when part was paid by transfer", () => {
+    expect(
+      quotePayment({ ...gcash, referenceNo: "", cashReceivedCentavos: 30_000, markAsDebt: true })
+        .canConfirm,
+    ).toBe(false);
+    // Nothing paid by transfer: all on the tab, no reference needed.
+    expect(
+      quotePayment({ ...gcash, referenceNo: "", cashReceivedCentavos: 0, markAsDebt: true }),
+    ).toMatchObject({ canConfirm: true, methodLabel: "Debt" });
+  });
+
+  it("accepts the exact amount and refuses more, since transfers give no change", () => {
+    expect(quotePayment({ ...gcash, cashReceivedCentavos: 70_000 }).canConfirm).toBe(true);
+    expect(quotePayment({ ...gcash, cashReceivedCentavos: 80_000 })).toMatchObject({
+      overByCentavos: 10_000,
+      changeCentavos: null,
+      canConfirm: false,
+    });
+  });
+});

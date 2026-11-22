@@ -64,6 +64,13 @@
       "when": 1794981859179,
       "tag": "0008_session_durations",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795279390336,
+      "tag": "0009_debt",
+      "breakpoints": true
     }
   ]
 }

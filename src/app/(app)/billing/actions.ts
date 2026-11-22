@@ -11,9 +11,12 @@ import {
   correctPayment,
   correctTopUp,
   getPaymentContext,
+  getDebtBalance,
   getPaymentCorrectionContext,
+  recordDebtPayment,
   recordTopUp,
   voidCreditEntry,
+  voidDebtEntry,
   voidPayment,
 } from "@/server/services/payments";
 
@@ -87,4 +90,24 @@ export async function correctTopUpAction(entryId: unknown, reason: unknown, topU
 
 export async function adjustCreditAction(input: unknown) {
   return refreshed(await runAction(({ db, actor }) => adjustCredit(db, actor, input)));
+}
+
+// Debt (D-129): money received against a patient's tab, and voiding it.
+
+export async function getDebtBalanceAction(patientId: unknown) {
+  return runAction(({ db, actor }) => getDebtBalance(db, actor, id.parse(patientId)), {
+    transaction: false,
+  });
+}
+
+export async function recordDebtPaymentAction(input: unknown) {
+  return refreshed(await runAction(({ db, actor }) => recordDebtPayment(db, actor, input)));
+}
+
+export async function voidDebtEntryAction(entryId: unknown, reason: unknown) {
+  return refreshed(
+    await runAction(async ({ db, actor }) => {
+      await voidDebtEntry(db, actor, { entryId: id.parse(entryId), reason });
+    }),
+  );
 }

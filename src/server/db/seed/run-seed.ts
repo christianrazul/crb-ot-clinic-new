@@ -11,6 +11,7 @@ import { buildSeedRows } from "./seed-data";
 const TABLES = [
   "audit_log",
   "credit_ledger",
+  "debt_ledger",
   "payments",
   "session_notes",
   "appointments",

@@ -11,10 +11,11 @@ import type { Actor } from "@/server/auth/actor";
 import { assertCan } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
-import { liveCredit, livePayment } from "@/server/db/queries/billing";
+import { liveCredit, liveDebt, livePayment } from "@/server/db/queries/billing";
 import {
   appointments,
   creditLedger,
+  debtLedger,
   expenses,
   patients,
   payments,
@@ -38,8 +39,9 @@ function pctChange(now: number, before: number) {
 
 /**
  * Money received per Manila month: cash collected for sessions (the part not
- * paid from credit) plus advance top-ups. Credit spent was already counted
- * when it was topped up, so it is not counted again. Deleted patients' money
+ * paid from credit or left as debt), advance top-ups, and debt paid off.
+ * Credit spent was already counted when it was topped up, so it is not
+ * counted again; debt counts when it is actually paid (D-129). Deleted patients' money
  * is left out, matching the rest of the dashboard.
  */
 async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: Date) {
@@ -47,7 +49,7 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
   const sessionIncome = await db
     .select({
       month: sessionMonth,
-      total: sql<string>`sum(${payments.amountCentavos} - ${payments.creditAppliedCentavos})`,
+      total: sql<string>`sum(${payments.amountCentavos} - ${payments.creditAppliedCentavos} - ${payments.debtCentavos})`,
     })
     .from(payments)
     .innerJoin(patients, eq(payments.patientId, patients.id))
@@ -77,8 +79,24 @@ async function incomeByMonth(db: DbExecutor, branchId: string, from: Date, to: D
       ),
     )
     .groupBy(topUpMonth);
+  const debtMonth = monthKey(debtLedger.createdAt);
+  const debtPaid = await db
+    .select({ month: debtMonth, total: sql<string>`-sum(${debtLedger.amountCentavos})` })
+    .from(debtLedger)
+    .innerJoin(patients, eq(debtLedger.patientId, patients.id))
+    .where(
+      and(
+        eq(patients.branchId, branchId),
+        isNull(patients.deletedAt),
+        eq(debtLedger.type, "settlement"),
+        liveDebt,
+        gte(debtLedger.createdAt, from),
+        lt(debtLedger.createdAt, to),
+      ),
+    )
+    .groupBy(debtMonth);
   const totals = new Map<string, number>();
-  for (const row of [...sessionIncome, ...topUps]) {
+  for (const row of [...sessionIncome, ...topUps, ...debtPaid]) {
     totals.set(row.month, (totals.get(row.month) ?? 0) + Number(row.total ?? 0));
   }
   return totals;

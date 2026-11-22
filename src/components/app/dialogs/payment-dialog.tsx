@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Wallet } from "lucide-react";
+import { Check, NotebookPen, Wallet } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -122,20 +122,33 @@ function PaymentForm({
   });
   const name = context.patientName;
   const isCash = method === "cash";
+  // The same payment with the shortfall on the tab, to know if that button can save.
+  const debtQuote = quotePayment({
+    ...paymentInput,
+    markAsDebt: true,
+    dueCentavos: context.feeCentavos,
+    creditBalanceCentavos: balance,
+  });
+  const reasonMissing = Boolean(correcting) && reason.trim().length < 3;
 
-  const confirm = () =>
+  /** Records the payment; `asDebt` puts what the cash doesn't cover on the tab (D-129). */
+  const confirm = (asDebt: boolean) =>
     startTransition(async () => {
-      if (!quote.canConfirm) return;
+      if (asDebt ? !debtQuote.canConfirm : !quote.canConfirm) return;
       setError(null);
+      const values = { ...paymentInput, markAsDebt: asDebt };
       const result = correcting
-        ? await correctPaymentAction(correcting.paymentId, reason, paymentInput)
-        : await collectPaymentAction({ appointmentId: context.appointmentId, ...paymentInput });
+        ? await correctPaymentAction(correcting.paymentId, reason, values)
+        : await collectPaymentAction({ appointmentId: context.appointmentId, ...values });
       if (!result.ok) return setError(result.error);
       onOpenChange(false);
+      const { receiptNo, debtCentavos, paidNowCentavos, debtBalanceAfterCentavos } = result.data;
       toast.success(correcting ? `Payment corrected for ${name}` : `Payment recorded for ${name}`, {
         description: correcting
-          ? `Receipt ${correcting.receiptNo} is voided; the new receipt is ${result.data.receiptNo}.`
-          : `${formatPeso(context.feeCentavos)} by ${result.data.methodLabel.toLowerCase()}, receipt ${result.data.receiptNo}`,
+          ? `Receipt ${correcting.receiptNo} is voided; the new receipt is ${receiptNo}.`
+          : debtCentavos > 0
+            ? `${paidNowCentavos > 0 ? `${formatPeso(paidNowCentavos)} received, ` : ""}${formatPeso(debtCentavos)} marked as debt (owes ${formatPeso(debtBalanceAfterCentavos ?? debtCentavos)} in all), receipt ${receiptNo}`
+            : `${formatPeso(context.feeCentavos)} by ${result.data.methodLabel.toLowerCase()}, receipt ${receiptNo}`,
       });
       if (result.data.lowCredit) {
         toast.warning(`${name}'s credit is low`, {
@@ -195,6 +208,19 @@ function PaymentForm({
             {formatPeso(context.feeCentavos)}
           </span>
         </div>
+
+        {context.debtBalanceCentavos > 0 && (
+          <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning-soft/50 px-3 py-2 text-sm">
+            <NotebookPen className="size-4 shrink-0 text-warning-strong" aria-hidden />
+            <span>
+              {name.split(" ")[0]} already owes{" "}
+              <span className="font-semibold tabular-nums">
+                {formatPeso(context.debtBalanceCentavos)}
+              </span>{" "}
+              from earlier sessions.
+            </span>
+          </div>
+        )}
 
         {balance > 0 && (
           <div
@@ -315,15 +341,32 @@ function PaymentForm({
                 </div>
               </div>
             ) : (
-              <div className="grid gap-1.5">
-                <Label htmlFor="ref">Reference number</Label>
-                <Input
-                  id="ref"
-                  value={referenceNo}
-                  onChange={(event) => setReferenceNo(event.target.value)}
-                  placeholder="e.g. 0029 8841 552"
-                  className="tabular-nums"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ref">Reference number</Label>
+                  <Input
+                    id="ref"
+                    value={referenceNo}
+                    onChange={(event) => setReferenceNo(event.target.value)}
+                    placeholder="e.g. 0029 8841 552"
+                    className="tabular-nums"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="recv-amt">
+                    Amount received{" "}
+                    <span className="font-normal text-muted-foreground">(blank: full)</span>
+                  </Label>
+                  <InputGroup
+                    id="recv-amt"
+                    prefix="₱"
+                    placeholder={String(quote.dueNowCentavos / 100)}
+                    inputMode="numeric"
+                    value={receivedText}
+                    aria-invalid={quote.shortByCentavos !== null || quote.overByCentavos !== null}
+                    onChange={(event) => setReceivedText(digitsOnly(event.target.value))}
+                  />
+                </div>
               </div>
             )}
           </>
@@ -364,20 +407,43 @@ function PaymentForm({
           )}
           <Separator className="my-1.5" />
           <SummaryRow label="Due now" value={formatPeso(quote.dueNowCentavos)} strong />
-          {quote.needsMethod && isCash && receivedText && (
-            <div
-              className={cn(
-                "mt-1.5 flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm",
-                quote.shortByCentavos !== null
-                  ? "bg-danger-soft text-danger-strong"
-                  : "bg-success-soft text-success-strong",
-              )}
-            >
-              <span>{quote.shortByCentavos !== null ? "Short by" : "Change"}</span>
-              <span className="font-semibold tabular-nums">
-                {formatPeso(quote.shortByCentavos ?? quote.changeCentavos ?? 0)}
-              </span>
-            </div>
+          {quote.needsMethod &&
+            receivedText &&
+            (isCash || quote.shortByCentavos !== null || quote.overByCentavos !== null) && (
+              <div
+                className={cn(
+                  "mt-1.5 flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm",
+                  quote.shortByCentavos !== null || quote.overByCentavos !== null
+                    ? "bg-danger-soft text-danger-strong"
+                    : "bg-success-soft text-success-strong",
+                )}
+              >
+                <span>
+                  {quote.shortByCentavos !== null
+                    ? "Short by"
+                    : quote.overByCentavos !== null
+                      ? "More than due by"
+                      : "Change"}
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {formatPeso(
+                    quote.shortByCentavos ?? quote.overByCentavos ?? quote.changeCentavos ?? 0,
+                  )}
+                </span>
+              </div>
+            )}
+          {quote.overByCentavos !== null && (
+            <p className="pt-1.5 text-xs text-muted-foreground">
+              Transfers have no change. Enter what&apos;s due and record the extra as an advance
+              payment.
+            </p>
+          )}
+          {quote.canMarkAsDebt && (
+            <p className="pt-1.5 text-xs text-muted-foreground">
+              {debtQuote.canConfirm
+                ? `Not enough on hand? Mark the ${formatPeso(quote.shortByCentavos ?? 0)} as debt to record what was paid and keep the rest on ${name.split(" ")[0]}'s tab.`
+                : `Enter the reference number to record the ${formatPeso(debtQuote.paidNowCentavos)} transfer and mark the ${formatPeso(quote.shortByCentavos ?? 0)} as debt.`}
+            </p>
           )}
         </div>
       </DialogBody>
@@ -385,11 +451,23 @@ function PaymentForm({
         <Button variant="outline" onClick={() => onOpenChange(false)}>
           Cancel
         </Button>
+        {quote.canMarkAsDebt && (
+          <Button
+            variant="secondary"
+            disabled={!debtQuote.canConfirm || pending || reasonMissing}
+            title={
+              debtQuote.canConfirm
+                ? undefined
+                : "Enter the reference number for this payment first."
+            }
+            onClick={() => confirm(true)}
+          >
+            <NotebookPen /> Mark {formatPeso(quote.shortByCentavos ?? 0)} as debt
+          </Button>
+        )}
         <Button
-          disabled={
-            !quote.canConfirm || pending || (Boolean(correcting) && reason.trim().length < 3)
-          }
-          onClick={confirm}
+          disabled={!quote.canConfirm || pending || reasonMissing}
+          onClick={() => confirm(false)}
         >
           {correcting ? "Save corrected payment" : cta}
         </Button>
