@@ -10,6 +10,7 @@ import {
   createBranch,
   createSessionType,
   createStaff,
+  moveSessionType,
   removeSessionType,
   setStaffActive,
   updateBranchHours,
@@ -113,6 +114,24 @@ export async function updateSessionTypeDurationAction(
           branchId: branch,
           id: id.parse(sessionTypeId),
           durationMinutes,
+        }),
+      ),
+    ),
+  );
+}
+
+export async function moveSessionTypeAction(
+  branchId: unknown,
+  sessionTypeId: unknown,
+  direction: unknown,
+) {
+  return inBranch(branchId, async (branch) =>
+    done(
+      await runAction(({ db, actor }) =>
+        moveSessionType(db, actor, {
+          branchId: branch,
+          id: id.parse(sessionTypeId),
+          direction: z.enum(["up", "down"]).parse(direction),
         }),
       ),
     ),

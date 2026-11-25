@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ import type { SettingsPageData } from "@/server/loaders/settings-page";
 
 import {
   addSessionTypeAction,
+  moveSessionTypeAction,
   removeSessionTypeAction,
   updateSessionTypeDurationAction,
   updateSessionTypeRateAction,
@@ -121,7 +122,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
     <>
       <SectionHead
         title="Session types"
-        description={`Types the desk at ${data.branch.name} can book, and their default fee.`}
+        description={`Types the desk at ${data.branch.name} can book, and their default fee. The first type is preselected when booking.`}
       >
         {!open && (
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -184,13 +185,13 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
                 <TableHead>Session type</TableHead>
                 <TableHead className="w-[160px]">Time interval</TableHead>
                 <TableHead className="w-[160px]">Rate per session</TableHead>
-                <TableHead className="w-[60px]">
-                  <span className="sr-only">Remove</span>
+                <TableHead className="w-[100px]">
+                  <span className="sr-only">Order and remove</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.sessionTypes.map((type) => (
+              {data.sessionTypes.map((type, index) => (
                 <TableRow key={type.id}>
                   <TableCell>
                     <span className="flex items-center gap-2 font-medium">
@@ -229,7 +230,34 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
                       rateCentavos={type.rateCentavos}
                     />
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    {(["up", "down"] as const).map((direction) => {
+                      const Icon = direction === "up" ? ArrowUp : ArrowDown;
+                      const edge =
+                        direction === "up" ? index === 0 : index === data.sessionTypes.length - 1;
+                      return (
+                        <Button
+                          key={direction}
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={pending || edge}
+                          className="text-muted-foreground"
+                          aria-label={`Move ${type.name} ${direction}`}
+                          onClick={() =>
+                            startTransition(async () => {
+                              const result = await moveSessionTypeAction(
+                                data.branch.id,
+                                type.id,
+                                direction,
+                              );
+                              if (!result.ok) toast.error(result.error);
+                            })
+                          }
+                        >
+                          <Icon />
+                        </Button>
+                      );
+                    })}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
