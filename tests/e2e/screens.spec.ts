@@ -348,12 +348,25 @@ test.describe("settings persist", () => {
 
     await page.goto("/settings?tab=sessions");
     await page.getByRole("button", { name: "Add session type" }).click();
-    await page.getByLabel("Name").fill("OT group session");
+    // Exact: each row's own name field is labelled "<type> name".
+    await page.getByLabel("Name", { exact: true }).fill("OT group session");
     await page.getByLabel("Rate", { exact: true }).fill("400");
     await page.getByRole("button", { name: "Add session type" }).click();
     await expect(page.getByText("OT group session added")).toBeVisible();
     await page.reload();
     await expect(page.getByLabel("OT group session rate")).toHaveValue("400");
+
+    // Row edits wait for Save changes, which is disabled until something changes.
+    const saveTypes = page.getByRole("button", { name: "Save changes" });
+    await expect(saveTypes).toBeDisabled();
+    await page.getByLabel("OT group session name").fill("OT group");
+    await page.getByLabel("OT group session rate").fill("450");
+    await saveTypes.click();
+    await expect(page.getByText("OT group saved")).toBeVisible();
+    await expect(saveTypes).toBeDisabled();
+    await page.reload();
+    await expect(page.getByLabel("OT group name")).toHaveValue("OT group");
+    await expect(page.getByLabel("OT group rate")).toHaveValue("450");
 
     await page.goto("/settings?tab=hours");
     // Sunday, which no other test books, so parallel tests are unaffected.
