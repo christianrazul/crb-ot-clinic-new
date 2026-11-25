@@ -9,6 +9,7 @@ import { ChartTooltipCard } from "@/components/app/chart-tooltip";
 import { EmptyState } from "@/components/app/detail-bits";
 import { Page, PageHeader } from "@/components/app/page-layout";
 import { PatientAvatar } from "@/components/app/patient-avatar";
+import { PaymentsByMethodCard } from "@/components/app/payments-by-method";
 import { useViewer } from "@/components/app/shell/viewer-context";
 import { StatStrip } from "@/components/app/stat-strip";
 import { StatusBadge } from "@/components/app/status-badge";
@@ -260,6 +261,11 @@ export function DashboardScreen({ data, branchName }: { data: DashboardData; bra
           </CardContent>
         </Card>
       </div>
+
+      <PaymentsByMethodCard
+        rows={data.receivedByMethod}
+        description={`${monthLabel} income by payment method`}
+      />
 
       <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
         <Card>

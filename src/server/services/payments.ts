@@ -1,6 +1,6 @@
 import "server-only";
 
-import { addDays, format, parseISO } from "date-fns";
+import { addDays, addMonths, format, parseISO } from "date-fns";
 import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -27,6 +27,7 @@ import {
   liveCredit,
   liveDebt,
   livePayment,
+  receivedByMethod,
   takeReceiptNumber,
 } from "@/server/db/queries/billing";
 import {
@@ -171,7 +172,19 @@ export async function getBillingDay(
     .from(patients)
     .where(and(eq(patients.branchId, input.branchId), isNull(patients.deletedAt)));
   const ids = branchPatients.map((p) => p.id);
-  const [balances, owed] = await Promise.all([balancesFor(db, ids), owedByPatient(db, ids, from)]);
+  const monthStart = `${input.date.slice(0, 7)}-01`;
+  const monthEnd = format(addMonths(parseISO(monthStart), 1), "yyyy-MM-dd");
+  const [balances, owed, dayByMethod, monthByMethod] = await Promise.all([
+    balancesFor(db, ids),
+    owedByPatient(db, ids, from),
+    receivedByMethod(db, input.branchId, from, to),
+    receivedByMethod(
+      db,
+      input.branchId,
+      fromManilaLocal(monthStart, "00:00"),
+      fromManilaLocal(monthEnd, "00:00"),
+    ),
+  ]);
   const withCredit = [...balances.values()].filter((b) => b > 0);
   const owedValues = [...owed.values()].filter((v) => v > 0);
 
@@ -195,6 +208,8 @@ export async function getBillingDay(
   }));
   return {
     items,
+    /** Money received by payment method, on this day and across its month. */
+    receivedByMethod: { day: dayByMethod, month: monthByMethod },
     totals: {
       collectedCentavos: items
         .filter((i) => i.paid)
