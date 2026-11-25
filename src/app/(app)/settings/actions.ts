@@ -12,11 +12,10 @@ import {
   createStaff,
   moveSessionType,
   removeSessionType,
+  saveSessionTypes,
   setStaffActive,
   updateBranchHours,
   updateRateClasses,
-  updateSessionTypeDuration,
-  updateSessionTypeRate,
   updateStaff,
 } from "@/server/services/settings";
 import {
@@ -84,38 +83,10 @@ export async function addSessionTypeAction(branchId: unknown, values: unknown) {
   );
 }
 
-export async function updateSessionTypeRateAction(
-  branchId: unknown,
-  sessionTypeId: unknown,
-  ratePesos: unknown,
-) {
+export async function saveSessionTypesAction(branchId: unknown, rows: unknown) {
   return inBranch(branchId, async (branch) =>
     done(
-      await runAction(({ db, actor }) =>
-        updateSessionTypeRate(db, actor, {
-          branchId: branch,
-          id: id.parse(sessionTypeId),
-          ratePesos,
-        }),
-      ),
-    ),
-  );
-}
-
-export async function updateSessionTypeDurationAction(
-  branchId: unknown,
-  sessionTypeId: unknown,
-  durationMinutes: unknown,
-) {
-  return inBranch(branchId, async (branch) =>
-    done(
-      await runAction(({ db, actor }) =>
-        updateSessionTypeDuration(db, actor, {
-          branchId: branch,
-          id: id.parse(sessionTypeId),
-          durationMinutes,
-        }),
-      ),
+      await runAction(({ db, actor }) => saveSessionTypes(db, actor, { branchId: branch, rows })),
     ),
   );
 }

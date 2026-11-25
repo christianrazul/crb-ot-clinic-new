@@ -22,6 +22,25 @@ export const sessionTypeInput = z.object({
     .default(60),
 });
 
+/** A session type's color is the service it belongs to; null leaves it uncategorized. */
+export const sessionTypeServiceInput = z.enum(["ot", "speech", "sped"]).nullable();
+
+/** Edits to a branch's session types, saved together from the settings table. */
+export const sessionTypeRowsInput = z
+  .array(
+    z.object({
+      id: z.string().min(1).max(64),
+      name: sessionTypeInput.shape.name,
+      service: sessionTypeServiceInput,
+      ratePesos: sessionTypeInput.shape.ratePesos,
+      durationMinutes: z.union([z.literal(30), z.literal(60)], {
+        error: "Pick 30 minutes or 1 hour.",
+      }),
+    }),
+  )
+  .min(1)
+  .max(100);
+
 export const staffInput = z.object({
   displayName: z.string().trim().min(2, "Enter the full name.").max(80),
   rateClassId: z.string().min(1, "Pick a role."),
