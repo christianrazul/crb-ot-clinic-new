@@ -21,6 +21,8 @@ import {
   hoursInput,
   rateClassesInput,
   sessionTypeInput,
+  sessionTypeRowsInput,
+  sessionTypeServiceInput,
   staffEditInput,
   staffInput,
 } from "@/lib/validation/settings";
@@ -270,6 +272,67 @@ export async function updateSessionTypeRate(
   });
 }
 
+/** Renames a type. Booked and past sessions show the new name too. */
+export async function renameSessionType(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; id: string; name: unknown },
+) {
+  const name = sessionTypeInput.shape.name.parse(input.name);
+  const before = await sessionTypeIn(db, actor, input.id, input.branchId);
+  if (before.name === name) return;
+  const [clash] = await db
+    .select()
+    .from(sessionTypes)
+    .where(
+      and(
+        eq(sessionTypes.branchId, input.branchId),
+        eq(sql`lower(${sessionTypes.name})`, name.toLowerCase()),
+      ),
+    );
+  if (clash && clash.id !== input.id) {
+    throw new ValidationError(
+      clash.active
+        ? `There is already a session type called ${clash.name}.`
+        : `A removed session type is called ${clash.name}. Add it again instead.`,
+    );
+  }
+  await db.update(sessionTypes).set({ name }).where(eq(sessionTypes.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.update",
+    entity: "session_type",
+    entityId: input.id,
+    before: { branchId: input.branchId, name: before.name },
+    after: { branchId: input.branchId, name },
+    ip: actor.ip,
+  });
+}
+
+/**
+ * A type's color is its service. It colors the type on the calendar and counts
+ * its sessions under that service on the dashboard, past months included.
+ */
+export async function updateSessionTypeService(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; id: string; service: unknown },
+) {
+  const service = sessionTypeServiceInput.parse(input.service);
+  const before = await sessionTypeIn(db, actor, input.id, input.branchId);
+  if (before.service === service) return;
+  await db.update(sessionTypes).set({ service }).where(eq(sessionTypes.id, input.id));
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.update",
+    entity: "session_type",
+    entityId: input.id,
+    before: { branchId: input.branchId, service: before.service },
+    after: { branchId: input.branchId, service },
+    ip: actor.ip,
+  });
+}
+
 /** A new length for future bookings. Booked sessions keep the time they were booked for. */
 export async function updateSessionTypeDuration(
   db: DbExecutor,
@@ -288,6 +351,34 @@ export async function updateSessionTypeDuration(
     after: { branchId: input.branchId, durationMinutes },
     ip: actor.ip,
   });
+}
+
+/**
+ * Saves the settings table's edits in one go: name, color, length and fee.
+ * Only fields that changed are written and audited. Run inside one
+ * transaction, a rejected row leaves every type as it was.
+ */
+export async function saveSessionTypes(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; rows: unknown },
+) {
+  assertCan(actor, "settings:manage", { branchId: input.branchId });
+  const rows = sessionTypeRowsInput.parse(input.rows);
+  for (const row of rows) {
+    const before = await sessionTypeIn(db, actor, row.id, input.branchId);
+    const target = { branchId: input.branchId, id: row.id };
+    if (before.name !== row.name) await renameSessionType(db, actor, { ...target, name: row.name });
+    if (before.service !== row.service)
+      await updateSessionTypeService(db, actor, { ...target, service: row.service });
+    if (before.durationMinutes !== row.durationMinutes)
+      await updateSessionTypeDuration(db, actor, {
+        ...target,
+        durationMinutes: row.durationMinutes,
+      });
+    if (before.rateCentavos !== row.ratePesos * 100)
+      await updateSessionTypeRate(db, actor, { ...target, ratePesos: row.ratePesos });
+  }
 }
 
 /**

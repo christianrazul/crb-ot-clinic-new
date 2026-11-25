@@ -19,10 +19,13 @@ import {
   createStaff,
   moveSessionType,
   removeSessionType,
+  renameSessionType,
+  saveSessionTypes,
   staffWithLoad,
   updateBranchHours,
   updateRateClasses,
   updateSessionTypeRate,
+  updateSessionTypeService,
 } from "@/server/services/settings";
 
 import { ACTORS } from "../support/actors";
@@ -180,6 +183,83 @@ describe("session types", () => {
         }),
       ).rejects.toThrow();
     }));
+
+  it("renames a type and changes its color, rejecting a name already in use", () =>
+    inRollback(async (tx) => {
+      const id = await createSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        values: { name: "Group play", ratePesos: 500, durationMinutes: 60 },
+      });
+      await createSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        values: { name: "Parent talk", ratePesos: 300, durationMinutes: 30 },
+      });
+      await renameSessionType(tx, ACTORS.owner, { branchId: "br_bangkal", id, name: " Group OT " });
+      await updateSessionTypeService(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id,
+        service: "speech",
+      });
+      const [changed] = await tx.select().from(sessionTypes).where(eq(sessionTypes.id, id));
+      expect(changed!.name).toBe("Group OT");
+      expect(changed!.service).toBe("speech");
+      await updateSessionTypeService(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id,
+        service: null,
+      });
+      const [cleared] = await tx.select().from(sessionTypes).where(eq(sessionTypes.id, id));
+      expect(cleared!.service).toBeNull();
+      await expect(
+        renameSessionType(tx, ACTORS.owner, { branchId: "br_bangkal", id, name: "parent talk" }),
+      ).rejects.toThrow(/already a session type/);
+      await expect(
+        updateSessionTypeService(tx, ACTORS.owner, { branchId: "br_bangkal", id, service: "aide" }),
+      ).rejects.toThrow();
+    }));
+
+  it("saves several edits together, and a rejected row saves none of them", async () => {
+    const db = testDb();
+    const types = await listSessionTypes(db, { branchId: "br_bangkal" });
+    const [first, second, third] = types;
+    const row = (t: typeof first) => ({
+      id: t!.id,
+      name: t!.name,
+      service: t!.service,
+      ratePesos: t!.rateCentavos / 100,
+      durationMinutes: t!.durationMinutes as 30 | 60,
+    });
+    await inRollback(async (tx) => {
+      await saveSessionTypes(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        rows: [
+          { ...row(first), name: "Renamed one", ratePesos: 999 },
+          { ...row(second), service: null, durationMinutes: 30 },
+        ],
+      });
+      const after = await listSessionTypes(tx, { branchId: "br_bangkal" });
+      const one = after.find((t) => t.id === first!.id)!;
+      const two = after.find((t) => t.id === second!.id)!;
+      expect([one.name, one.rateCentavos]).toEqual(["Renamed one", 99_900]);
+      expect([two.service, two.durationMinutes]).toEqual([null, 30]);
+    });
+    await expect(
+      db.transaction((tx) =>
+        saveSessionTypes(tx, ACTORS.owner, {
+          branchId: "br_bangkal",
+          rows: [
+            { ...row(first), name: "Should not stick" },
+            { ...row(second), name: third!.name.toUpperCase() },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/already a session type/);
+    const unchanged = await listSessionTypes(db, { branchId: "br_bangkal" });
+    expect(unchanged.find((t) => t.id === first!.id)!.name).toBe(first!.name);
+    await expect(
+      saveSessionTypes(db, ACTORS.desk, { branchId: "br_bangkal", rows: [row(first)] }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
 });
 
 describe("staff and branches", () => {

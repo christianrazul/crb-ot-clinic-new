@@ -28,52 +28,36 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { durationLabel, SESSION_DURATIONS } from "@/lib/booking";
+import { SERVICE_LABELS, type ServiceKey } from "@/lib/services";
+import { cn } from "@/lib/utils";
 import type { SettingsPageData } from "@/server/loaders/settings-page";
 
 import {
   addSessionTypeAction,
   moveSessionTypeAction,
   removeSessionTypeAction,
-  updateSessionTypeDurationAction,
-  updateSessionTypeRateAction,
+  saveSessionTypesAction,
 } from "../actions";
 import { AddForm, digitsOnly } from "./add-form";
 
-/** Rate field that saves when it loses focus, not on every keystroke. */
-function RateField({
-  branchId,
-  id,
-  name,
-  rateCentavos,
-}: {
-  branchId: string;
-  id: string;
-  name: string;
-  rateCentavos: number;
-}) {
-  const [value, setValue] = React.useState(String(rateCentavos / 100));
-  const [, startTransition] = React.useTransition();
-  return (
-    <InputGroup
-      prefix="₱"
-      aria-label={`${name} rate`}
-      value={value}
-      inputMode="numeric"
-      className="w-[120px]"
-      inputClassName="h-8"
-      onChange={(e) => setValue(digitsOnly(e.target.value))}
-      onBlur={() => {
-        if (Number(value || 0) * 100 === rateCentavos) return;
-        startTransition(async () => {
-          const result = await updateSessionTypeRateAction(branchId, id, Number(value || 0));
-          if (result.ok)
-            toast.success(`${name} rate saved`, { description: "Applies to new bookings." });
-          else toast.error(result.error);
-        });
-      }}
-    />
-  );
-}
+type SessionType = SettingsPageData["sessionTypes"][number];
+type Service = SessionType["service"];
+
+/** What the table edits for one type. Rate is kept as typed so the field can be empty. */
+type RowDraft = { name: string; service: Service; rate: string; durationMinutes: number };
+
+const fromType = (type: SessionType): RowDraft => ({
+  name: type.name,
+  service: type.service,
+  rate: String(type.rateCentavos / 100),
+  durationMinutes: type.durationMinutes,
+});
+
+const isChanged = (type: SessionType, row: RowDraft) =>
+  row.name.trim() !== type.name ||
+  row.service !== type.service ||
+  Number(row.rate || 0) * 100 !== type.rateCentavos ||
+  row.durationMinutes !== type.durationMinutes;
 
 /** Length picker: half an hour or one hour. */
 function DurationSelect({
@@ -111,12 +95,98 @@ function DurationSelect({
   );
 }
 
+const COLOR_CHOICES = ["ot", "speech", "sped", "none"] as const satisfies ServiceKey[];
+
+/** A type's color is its service: OT, Speech, SPED or uncategorized. */
+function ColorSelect({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: Service;
+  onChange: (service: Service) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      value={value ?? "none"}
+      disabled={disabled}
+      onValueChange={(next) => onChange(next === "none" ? null : (next as NonNullable<Service>))}
+    >
+      <SelectTrigger aria-label={label} title="Color (service)" className="h-8 w-auto gap-1.5 px-2">
+        <SvcDot service={value} className="size-3" />
+      </SelectTrigger>
+      <SelectContent>
+        {COLOR_CHOICES.map((key) => (
+          <SelectItem key={key} value={key}>
+            <span className="flex items-center gap-2">
+              <SvcDot service={key} className="size-3" />
+              {SERVICE_LABELS[key]}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function SessionTypesSection({ data }: { data: SettingsPageData }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [rate, setRate] = React.useState("");
   const [duration, setDuration] = React.useState(60);
   const [pending, startTransition] = React.useTransition();
+  const [saving, startSaving] = React.useTransition();
+  // Unsaved edits by type id. Rows without an entry show what is saved, so
+  // adding, moving or removing a type never loses or resurrects an edit.
+  const [edits, setEdits] = React.useState<Record<string, RowDraft>>({});
+
+  const rowFor = (type: SessionType) => edits[type.id] ?? fromType(type);
+  const edit = (type: SessionType, patch: Partial<RowDraft>) =>
+    setEdits((current) => ({ ...current, [type.id]: { ...rowFor(type), ...patch } }));
+
+  const changed = data.sessionTypes.filter((type) => {
+    const row = edits[type.id];
+    return row && isChanged(type, row);
+  });
+  const dirty = changed.length > 0;
+  const invalid = changed.some((type) => edits[type.id]!.name.trim().length < 2);
+  const busy = pending || saving;
+
+  // Warn before leaving the page with edits that were never saved.
+  React.useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const save = () =>
+    startSaving(async () => {
+      const result = await saveSessionTypesAction(
+        data.branch.id,
+        changed.map((type) => {
+          const row = edits[type.id]!;
+          return {
+            id: type.id,
+            name: row.name.trim(),
+            service: row.service,
+            ratePesos: Number(row.rate || 0),
+            durationMinutes: row.durationMinutes,
+          };
+        }),
+      );
+      if (!result.ok) return void toast.error(result.error);
+      setEdits({});
+      toast.success(
+        changed.length === 1
+          ? `${edits[changed[0]!.id]!.name.trim()} saved`
+          : `${changed.length} session types saved`,
+        { description: "Fees and time intervals apply to new bookings." },
+      );
+    });
 
   return (
     <>
@@ -124,11 +194,27 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
         title="Session types"
         description={`Types the desk at ${data.branch.name} can book, and their default fee. The first type is preselected when booking.`}
       >
-        {!open && (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus /> Add session type
+        <div className="flex flex-wrap items-center gap-2">
+          {!open && (
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)} disabled={saving}>
+              <Plus /> Add session type
+            </Button>
+          )}
+          {dirty && (
+            <Button size="sm" variant="ghost" onClick={() => setEdits({})} disabled={saving}>
+              Discard
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={save}
+            loading={saving}
+            disabled={!dirty || invalid || pending}
+            title={invalid ? "Every session type needs a name." : undefined}
+          >
+            {saving ? "Saving…" : "Save changes"}
           </Button>
-        )}
+        </div>
       </SectionHead>
       <Card className="overflow-hidden">
         <AddForm
@@ -179,7 +265,7 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
           </div>
         </AddForm>
         {data.sessionTypes.length ? (
-          <Table>
+          <Table className={cn(saving && "opacity-70")}>
             <TableHeader>
               <TableRow>
                 <TableHead>Session type</TableHead>
@@ -191,100 +277,117 @@ export function SessionTypesSection({ data }: { data: SettingsPageData }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.sessionTypes.map((type, index) => (
-                <TableRow key={type.id}>
-                  <TableCell>
-                    <span className="flex items-center gap-2 font-medium">
-                      <SvcDot service={type.service} />
-                      {type.name}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <DurationSelect
-                      label={`${type.name} time interval`}
-                      value={type.durationMinutes}
-                      disabled={pending}
-                      className="h-8 w-[120px]"
-                      onChange={(minutes) =>
-                        startTransition(async () => {
-                          const result = await updateSessionTypeDurationAction(
-                            data.branch.id,
-                            type.id,
-                            minutes,
-                          );
-                          if (result.ok)
-                            toast.success(`${type.name} is now ${durationLabel(minutes)}`, {
-                              description: "Applies to new bookings.",
-                            });
-                          else toast.error(result.error);
-                        })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <RateField
-                      key={type.rateCentavos}
-                      branchId={data.branch.id}
-                      id={type.id}
-                      name={type.name}
-                      rateCentavos={type.rateCentavos}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
-                    {(["up", "down"] as const).map((direction) => {
-                      const Icon = direction === "up" ? ArrowUp : ArrowDown;
-                      const edge =
-                        direction === "up" ? index === 0 : index === data.sessionTypes.length - 1;
-                      return (
-                        <Button
-                          key={direction}
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={pending || edge}
-                          className="text-muted-foreground"
-                          aria-label={`Move ${type.name} ${direction}`}
-                          onClick={() =>
-                            startTransition(async () => {
-                              const result = await moveSessionTypeAction(
-                                data.branch.id,
-                                type.id,
-                                direction,
-                              );
-                              if (!result.ok) toast.error(result.error);
-                            })
-                          }
-                        >
-                          <Icon />
-                        </Button>
-                      );
-                    })}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={pending}
-                          className="text-muted-foreground hover:bg-danger-soft hover:text-danger"
-                          aria-label={`Remove ${type.name}`}
-                          onClick={() =>
-                            startTransition(async () => {
-                              const result = await removeSessionTypeAction(data.branch.id, type.id);
-                              if (result.ok)
+              {data.sessionTypes.map((type, index) => {
+                const row = rowFor(type);
+                const rowChanged = isChanged(type, row);
+                const nameMissing = row.name.trim().length < 2;
+                return (
+                  <TableRow key={type.id} className={cn(rowChanged && "bg-muted/40")}>
+                    <TableCell>
+                      <span className="flex items-center gap-2">
+                        <ColorSelect
+                          label={`${type.name} color`}
+                          value={row.service}
+                          disabled={saving}
+                          onChange={(service) => edit(type, { service })}
+                        />
+                        <Input
+                          aria-label={`${type.name} name`}
+                          aria-invalid={nameMissing || undefined}
+                          value={row.name}
+                          maxLength={60}
+                          disabled={saving}
+                          className="h-8 min-w-[160px] font-medium"
+                          onChange={(e) => edit(type, { name: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && dirty && !invalid) save();
+                          }}
+                        />
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <DurationSelect
+                        label={`${type.name} time interval`}
+                        value={row.durationMinutes}
+                        disabled={saving}
+                        className="h-8 w-[120px]"
+                        onChange={(durationMinutes) => edit(type, { durationMinutes })}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <InputGroup
+                        prefix="₱"
+                        aria-label={`${type.name} rate`}
+                        value={row.rate}
+                        inputMode="numeric"
+                        disabled={saving}
+                        className="w-[120px]"
+                        inputClassName="h-8"
+                        onChange={(e) => edit(type, { rate: digitsOnly(e.target.value) })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && dirty && !invalid) save();
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      {(["up", "down"] as const).map((direction) => {
+                        const Icon = direction === "up" ? ArrowUp : ArrowDown;
+                        const edge =
+                          direction === "up" ? index === 0 : index === data.sessionTypes.length - 1;
+                        return (
+                          <Button
+                            key={direction}
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={busy || edge}
+                            className="text-muted-foreground"
+                            aria-label={`Move ${type.name} ${direction}`}
+                            onClick={() =>
+                              startTransition(async () => {
+                                const result = await moveSessionTypeAction(
+                                  data.branch.id,
+                                  type.id,
+                                  direction,
+                                );
+                                if (!result.ok) toast.error(result.error);
+                              })
+                            }
+                          >
+                            <Icon />
+                          </Button>
+                        );
+                      })}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={busy}
+                            className="text-muted-foreground hover:bg-danger-soft hover:text-danger"
+                            aria-label={`Remove ${type.name}`}
+                            onClick={() =>
+                              startTransition(async () => {
+                                const result = await removeSessionTypeAction(
+                                  data.branch.id,
+                                  type.id,
+                                );
+                                if (!result.ok) return void toast.error(result.error);
+                                setEdits(({ [type.id]: _, ...rest }) => rest);
                                 toast.success(`${type.name} removed`, {
                                   description: "Past sessions of this type keep it.",
                                 });
-                              else toast.error(result.error);
-                            })
-                          }
-                        >
-                          <Trash2 />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Remove</TooltipContent>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
+                              })
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Remove</TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         ) : (
