@@ -290,6 +290,40 @@ export async function updateSessionTypeDuration(
   });
 }
 
+/**
+ * Moves a type one place up or down in the branch's list. The first type is
+ * the one the booking dialog preselects, so the order is the desk's default.
+ */
+export async function moveSessionType(
+  db: DbExecutor,
+  actor: Actor,
+  input: { branchId: string; id: string; direction: "up" | "down" },
+) {
+  await sessionTypeIn(db, actor, input.id, input.branchId);
+  const types = await listSessionTypes(db, { branchId: input.branchId });
+  const from = types.findIndex((t) => t.id === input.id);
+  const to = input.direction === "up" ? from - 1 : from + 1;
+  if (from < 0 || to < 0 || to >= types.length) return;
+  const ids = types.map((t) => t.id);
+  [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+  // Number the whole list so ties and gaps left by removed types cannot misorder it.
+  for (const [index, typeId] of ids.entries()) {
+    await db
+      .update(sessionTypes)
+      .set({ sortOrder: index + 1 })
+      .where(eq(sessionTypes.id, typeId));
+  }
+  await writeAudit(db, {
+    actorUserId: actor.userId,
+    action: "session_type.update",
+    entity: "session_type",
+    entityId: input.id,
+    before: { branchId: input.branchId, position: from + 1 },
+    after: { branchId: input.branchId, position: to + 1 },
+    ip: actor.ip,
+  });
+}
+
 /** Removing hides the type from booking; past sessions keep it. */
 export async function removeSessionType(
   db: DbExecutor,

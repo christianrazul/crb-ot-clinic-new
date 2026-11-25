@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
+import { listSessionTypes } from "@/server/db/queries/session-types";
 import { ForbiddenError } from "@/server/auth/permissions";
 import {
   appointments,
@@ -16,6 +17,7 @@ import {
   createSessionType,
   updateSessionTypeDuration,
   createStaff,
+  moveSessionType,
   removeSessionType,
   staffWithLoad,
   updateBranchHours,
@@ -121,6 +123,38 @@ describe("session types", () => {
           values: { name: "OT group session", ratePesos: 450 },
         }),
       ).toBe(id);
+    }));
+
+  it("moves a type up and down, which changes the booking default", () =>
+    inRollback(async (tx) => {
+      const names = async () =>
+        (await listSessionTypes(tx, { branchId: "br_bangkal" })).map((t) => t.name);
+      const before = await names();
+      const last = (await listSessionTypes(tx, { branchId: "br_bangkal" })).at(-1)!;
+      await moveSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id: last.id,
+        direction: "up",
+      });
+      const moved = await names();
+      expect(moved.at(-2)).toBe(last.name);
+      await moveSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id: last.id,
+        direction: "up",
+      });
+      expect(await names()).toEqual(
+        before.length > 2 ? [...before.slice(0, -3), last.name, ...before.slice(-3, -1)] : moved,
+      );
+      // Past the ends nothing changes.
+      const top = (await listSessionTypes(tx, { branchId: "br_bangkal" }))[0]!;
+      const snapshot = await names();
+      await moveSessionType(tx, ACTORS.owner, {
+        branchId: "br_bangkal",
+        id: top.id,
+        direction: "up",
+      });
+      expect(await names()).toEqual(snapshot);
     }));
 
   it("sets and changes a type's time interval", () =>
