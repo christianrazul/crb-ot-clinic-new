@@ -22,6 +22,7 @@ import { useDialogs } from "@/components/app/dialogs/dialog-host";
 import { ReasonDialog } from "@/components/app/dialogs/reason-dialog";
 import { Page, PageHeader } from "@/components/app/page-layout";
 import { PatientAvatar } from "@/components/app/patient-avatar";
+import { PaymentsByMethodCard } from "@/components/app/payments-by-method";
 import { StatStrip } from "@/components/app/stat-strip";
 import { SvcDot } from "@/components/app/svc-dot";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatManila } from "@/lib/dates";
 import { formatPeso } from "@/lib/money";
 import type { BillingPageData } from "@/server/loaders/billing-page";
@@ -66,6 +68,11 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
   };
   const shift = (days: number) => goTo(format(addDays(parseISO(data.date), days), "yyyy-MM-dd"));
   const [voiding, setVoiding] = React.useState<(typeof items)[number] | null>(null);
+  const [methodPeriod, setMethodPeriod] = React.useState<"day" | "month">("day");
+  const dayLabel = isToday
+    ? "today"
+    : `on ${formatManila(new Date(`${data.date}T04:00:00Z`), "shortDay")}`;
+  const monthLabel = format(parseISO(data.date), "MMMM yyyy");
 
   return (
     <Page>
@@ -139,6 +146,27 @@ export function BillingScreen({ data, branchName }: { data: BillingPageData; bra
             sub: `${plural(totals.patientsWithCredit, "patient")} with credit`,
           },
         ]}
+      />
+      <PaymentsByMethodCard
+        rows={data.receivedByMethod[methodPeriod]}
+        description={
+          methodPeriod === "day"
+            ? `Received ${dayLabel}, including advance and debt payments`
+            : `Received in ${monthLabel}, including advance and debt payments`
+        }
+        action={
+          <ToggleGroup
+            type="single"
+            variant="segment"
+            size="sm"
+            value={methodPeriod}
+            onValueChange={(value) => value && setMethodPeriod(value as "day" | "month")}
+            aria-label="Payments received period"
+          >
+            <ToggleGroupItem value="day">Day</ToggleGroupItem>
+            <ToggleGroupItem value="month">Month</ToggleGroupItem>
+          </ToggleGroup>
+        }
       />
       <Card className="overflow-hidden">
         <CardHeader className="flex-row items-center justify-between border-b pb-4">

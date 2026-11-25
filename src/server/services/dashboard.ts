@@ -11,7 +11,7 @@ import type { Actor } from "@/server/auth/actor";
 import { assertCan } from "@/server/auth/permissions";
 import { clinicNow, clinicToday } from "@/server/clock";
 import type { DbExecutor } from "@/server/db/client";
-import { liveCredit, liveDebt, livePayment } from "@/server/db/queries/billing";
+import { liveCredit, liveDebt, livePayment, receivedByMethod } from "@/server/db/queries/billing";
 import {
   appointments,
   creditLedger,
@@ -165,9 +165,10 @@ export async function getDashboard(db: DbExecutor, actor: Actor, input: { branch
     };
   });
 
-  const [current, previous] = await Promise.all([
+  const [current, previous, byMethod] = await Promise.all([
     statusCounts(db, branchId, thisMonth.from, thisMonth.to),
     statusCounts(db, branchId, lastMonth.from, lastMonth.to),
+    receivedByMethod(db, branchId, thisMonth.from, thisMonth.to),
   ]);
 
   const [activeRow] = await db
@@ -322,6 +323,8 @@ export async function getDashboard(db: DbExecutor, actor: Actor, input: { branch
           : null,
     },
     cashFlow,
+    /** This month's income split by how it was paid. */
+    receivedByMethod: byMethod,
     /** Net cash change of the last month against the one before, for the badge. */
     netDeltaPct: pctChange(lastNet(cashFlow.slice(-1)), lastNet(cashFlow.slice(-2, -1))),
     sessionsByService: byService

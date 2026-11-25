@@ -8,3 +8,11 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   bank_transfer: "Bank transfer",
   card: "Card",
 };
+
+/** Money received per method over some period; every method listed, zero or not. */
+export type ReceivedByMethod = {
+  method: PaymentMethod;
+  totalCentavos: number;
+  /** Money-in transactions: session payments, advance top-ups and debt paid off. */
+  count: number;
+}[];
