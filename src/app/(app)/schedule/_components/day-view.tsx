@@ -198,7 +198,7 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
                         width: `calc(${100 / lanes}% - 8px)`,
                       }}
                       className={cn(
-                        "absolute z-[2] flex min-h-0 flex-col items-start rounded-md border-l-[3px] text-left transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.98] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                        "absolute z-[2] flex min-h-0 flex-col items-start overflow-hidden rounded-md border-l-[3px] text-left transition-[filter,box-shadow] hover:shadow-sm hover:brightness-[0.98] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                         compact ? "justify-center px-2 py-0" : "justify-between px-2.5 py-1.5",
                         SERVICE_BLOCK[appointment.service],
                         struck && "opacity-55",
@@ -215,11 +215,13 @@ export function DayView({ day, nowIso, isToday }: { day: Day; nowIso: string; is
                       </span>
                       {!compact && (
                         <span className="flex w-full items-center gap-1.5">
-                          <span className="text-xs">{appointment.sessionTypeName}</span>
+                          <span className="line-clamp-2 min-w-0 text-xs">
+                            {appointment.sessionTypeName}
+                          </span>
                           {appointment.status !== "scheduled" && (
                             <StatusBadge
                               status={appointment.status}
-                              className="ml-auto px-1.5 py-0 text-[10.5px]"
+                              className="ml-auto shrink-0 px-1.5 py-0 text-[10.5px]"
                             />
                           )}
                         </span>
